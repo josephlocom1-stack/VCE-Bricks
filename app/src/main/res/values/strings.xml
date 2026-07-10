@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Revision Reminder</string>
+    <string name="notification_channel_name">Revision reminders</string>
+    <string name="notification_channel_description">Daily reminders when revision topics are due</string>
+</resources>
