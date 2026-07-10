@@ -1,6 +1,7 @@
 name: Android CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [main, feature/revision-reminder-mvp]
   pull_request:
@@ -28,3 +29,10 @@ jobs:
         run: gradle --no-daemon lintDebug
       - name: Assemble debug APK
         run: gradle --no-daemon assembleDebug
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: revision-reminder-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
