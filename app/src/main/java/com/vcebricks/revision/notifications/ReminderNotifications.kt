@@ -33,9 +33,19 @@ class ReminderScheduler(
     private val context: Context,
     private val settingsStore: SettingsStore,
 ) {
-    fun ensureScheduled() {
+    suspend fun ensureScheduled() {
+        val settings = settingsStore.settings.first()
+        if (!settings.notificationsEnabled) {
+            WorkManager.getInstance(context).cancelUniqueWork(UNIQUE_WORK_NAME)
+            NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
+            return
+        }
+
         val request = PeriodicWorkRequestBuilder<ReviewReminderWorker>(24, TimeUnit.HOURS)
-            .setInitialDelay(delayUntilNext(18, 0).toMinutes().coerceAtLeast(1), TimeUnit.MINUTES)
+            .setInitialDelay(
+                delayUntilNext(settings.reminderHour, settings.reminderMinute).toMinutes().coerceAtLeast(1),
+                TimeUnit.MINUTES,
+            )
             .build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             UNIQUE_WORK_NAME,
@@ -111,7 +121,7 @@ class ReviewReminderWorker(
             "${due.size} topics are ready to revise"
         }
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText("Open Revision Reminder to start with the most overdue topic.")
             .setContentIntent(openApp)
