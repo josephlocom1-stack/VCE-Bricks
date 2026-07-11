@@ -33,6 +33,13 @@ class ReviewSchedulerTest {
     }
 
     @Test
+    fun partlyRecalledAtFirstStage_returnsTomorrowRatherThanWaitingLonger() {
+        val result = scheduler.nextReview(0, ReviewOutcome.PARTLY_RECALLED, completion)
+        assertEquals(0, result.newStageIndex)
+        assertEquals(completion.plusDays(1), result.nextReviewDate)
+    }
+
+    @Test
     fun recalledWell_advancesAndUsesNewStageInterval() {
         val result = scheduler.nextReview(0, ReviewOutcome.RECALLED_WELL, completion)
         assertEquals(1, result.newStageIndex)
@@ -40,10 +47,13 @@ class ReviewSchedulerTest {
     }
 
     @Test
-    fun finalStage_isCappedAndSchedulesOneHundredTwentyDays() {
-        val result = scheduler.nextReview(6, ReviewOutcome.RECALLED_WELL, completion)
-        assertEquals(6, result.newStageIndex)
-        assertEquals(completion.plusDays(120), result.nextReviewDate)
+    fun finalStage_isCappedAndContinuesSchedulingEveryOneHundredTwentyDays() {
+        val first = scheduler.nextReview(6, ReviewOutcome.RECALLED_WELL, completion)
+        val second = scheduler.nextReview(6, ReviewOutcome.RECALLED_WELL, first.nextReviewDate)
+
+        assertEquals(6, first.newStageIndex)
+        assertEquals(completion.plusDays(120), first.nextReviewDate)
+        assertEquals(first.nextReviewDate.plusDays(120), second.nextReviewDate)
     }
 
     @Test
