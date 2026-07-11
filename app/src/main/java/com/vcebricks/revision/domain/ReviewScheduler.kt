@@ -39,7 +39,12 @@ class ReviewScheduler(
             )
 
             ReviewOutcome.PARTLY_RECALLED -> {
-                val shortened = (intervalsDays[safeStage] * 0.6).roundToInt().coerceAtLeast(2)
+                // At stage 0, a partial recall should not wait longer than the original one-day interval.
+                val shortened = if (safeStage == 0) {
+                    1
+                } else {
+                    (intervalsDays[safeStage] * 0.6).roundToInt().coerceAtLeast(2)
+                }
                 ScheduleResult(
                     newStageIndex = safeStage,
                     nextReviewDate = actualCompletionDate.plusDays(shortened.toLong()),
