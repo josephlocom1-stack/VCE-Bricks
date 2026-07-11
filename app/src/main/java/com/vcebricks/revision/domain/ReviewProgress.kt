@@ -15,7 +15,11 @@ fun calculateReviewProgress(
 ): ReviewProgress {
     val totalDays = ChronoUnit.DAYS.between(intervalStartDate, dueDate).coerceAtLeast(1)
     val elapsedDays = ChronoUnit.DAYS.between(intervalStartDate, today).coerceIn(0, totalDays)
-    val fraction = (elapsedDays.toFloat() / totalDays.toFloat()).coerceIn(0f, 1f)
+    val fraction = when {
+        !today.isBefore(dueDate) -> 1f
+        !today.isAfter(intervalStartDate) -> 0f
+        else -> (elapsedDays.toFloat() / totalDays.toFloat()).coerceIn(0f, 1f)
+    }
     val daysRemaining = ChronoUnit.DAYS.between(today, dueDate)
 
     val status = when {
