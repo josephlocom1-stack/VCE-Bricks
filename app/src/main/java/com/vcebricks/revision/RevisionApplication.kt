@@ -7,13 +7,20 @@ import com.vcebricks.revision.data.RevisionRepository
 import com.vcebricks.revision.data.SettingsStore
 import com.vcebricks.revision.domain.ReviewScheduler
 import com.vcebricks.revision.notifications.ReminderScheduler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class RevisionApplication : Application() {
     val container: AppContainer by lazy { AppContainer(this) }
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onCreate() {
         super.onCreate()
-        container.reminderScheduler.ensureScheduled()
+        applicationScope.launch {
+            container.reminderScheduler.ensureScheduled()
+        }
     }
 }
 
