@@ -1,5 +1,6 @@
 package com.vcebricks.revision.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -23,6 +25,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -45,16 +49,29 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vcebricks.revision.data.RevisionTopicEntity
 import com.vcebricks.revision.domain.ReviewOutcome
+import com.vcebricks.revision.domain.calculateReviewProgress
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeParseException
 
 private enum class MainTab { TODAY, TOPICS }
+
+private val subjectOptions = listOf(
+    "Methods",
+    "Specialist Mathematics",
+    "Chemistry",
+    "English Language",
+    "Chinese Second Language",
+    "Biology",
+)
 
 @Composable
 fun RevisionApp(
@@ -85,6 +102,8 @@ private fun OnboardingScreen(onContinue: () -> Unit) {
         Text("Record what you study. The app brings it back when it is time to practise remembering it.")
         Spacer(Modifier.height(12.dp))
         Text("When a review is due, recall the important ideas before opening your notes, then rate how well you remembered.")
+        Spacer(Modifier.height(12.dp))
+        Text("Reviews do not stop after one attempt. Each topic is scheduled again, and strong topics continue every 120 days at the final stage.")
         Spacer(Modifier.height(28.dp))
         Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) { Text("Set up reminders") }
     }
@@ -145,6 +164,7 @@ private fun MainShell(
             )
             MainTab.TOPICS -> TopicsScreen(
                 topics = state.allTopics,
+                today = state.today,
                 modifier = Modifier.padding(padding),
                 onEdit = { editTopic = it },
                 onArchive = { viewModel.archive(it.id, !it.isArchived) },
@@ -251,6 +271,7 @@ private fun TodayScreen(state: MainUiState, modifier: Modifier, onReview: (Revis
 @Composable
 private fun TopicsScreen(
     topics: List<RevisionTopicEntity>,
+    today: LocalDate,
     modifier: Modifier,
     onEdit: (RevisionTopicEntity) -> Unit,
     onArchive: (RevisionTopicEntity) -> Unit,
@@ -279,7 +300,12 @@ private fun TopicsScreen(
                 Column(Modifier.padding(16.dp)) {
                     Text(item.subject, style = MaterialTheme.typography.labelLarge)
                     Text(item.topic, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(if (item.isArchived) "Archived" else "Next: ${LocalDate.ofEpochDay(item.nextReviewDateEpochDay)}")
+                    if (item.isArchived) {
+                        Text("Archived")
+                    } else {
+                        Spacer(Modifier.height(8.dp))
+                        ReviewProgressIndicator(item, today)
+                    }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         IconButton(onClick = { onEdit(item) }) { Icon(Icons.Default.Edit, "Edit") }
                         IconButton(onClick = { onArchive(item) }) { Icon(Icons.Default.Archive, if (item.isArchived) "Restore" else "Archive") }
@@ -304,21 +330,48 @@ private fun TopicCard(
     reviewEnabled: Boolean,
     onReview: (() -> Unit)?,
 ) {
-    val dueDate = LocalDate.ofEpochDay(item.nextReviewDateEpochDay)
     Card(Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(item.subject, style = MaterialTheme.typography.labelLarge)
-                Text(item.topic, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                val daysLate = java.time.temporal.ChronoUnit.DAYS.between(dueDate, today)
-                Text(if (daysLate > 0) "$daysLate days overdue" else "Due $dueDate")
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(item.subject, style = MaterialTheme.typography.labelLarge)
+                    Text(item.topic, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                }
+                if (reviewEnabled && onReview != null) Button(onClick = onReview) { Text("Review") }
             }
-            if (reviewEnabled && onReview != null) Button(onClick = onReview) { Text("Review") }
+            Spacer(Modifier.height(10.dp))
+            ReviewProgressIndicator(item, today)
         }
+    }
+}
+
+@Composable
+private fun ReviewProgressIndicator(item: RevisionTopicEntity, today: LocalDate) {
+    val intervalStartDate = item.lastReviewedAtEpochMillis?.let {
+        Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate()
+    } ?: LocalDate.ofEpochDay(item.studyDateEpochDay)
+    val dueDate = LocalDate.ofEpochDay(item.nextReviewDateEpochDay)
+    val progress = calculateReviewProgress(intervalStartDate, dueDate, today)
+
+    Text(progress.statusText, style = MaterialTheme.typography.bodySmall)
+    Spacer(Modifier.height(6.dp))
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(7.dp)
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth(progress.fraction)
+                .height(7.dp)
+                .background(MaterialTheme.colorScheme.primary),
+        )
     }
 }
 
@@ -329,7 +382,10 @@ private fun TopicEditorDialog(
     onDismiss: () -> Unit,
     onSave: (String, String, String, LocalDate) -> Unit,
 ) {
-    var subject by remember(initial?.id) { mutableStateOf(initial?.subject.orEmpty()) }
+    var subject by remember(initial?.id) {
+        mutableStateOf(initial?.subject?.takeIf { it in subjectOptions }.orEmpty())
+    }
+    var subjectExpanded by remember { mutableStateOf(false) }
     var topic by remember(initial?.id) { mutableStateOf(initial?.topic.orEmpty()) }
     var note by remember(initial?.id) { mutableStateOf(initial?.note.orEmpty()) }
     var dateText by remember(initial?.id) {
@@ -341,7 +397,29 @@ private fun TopicEditorDialog(
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(subject, { subject = it }, label = { Text("Subject") }, singleLine = true)
+                Box(Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { subjectExpanded = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(if (subject.isBlank()) "Select subject ▼" else "$subject ▼")
+                    }
+                    DropdownMenu(
+                        expanded = subjectExpanded,
+                        onDismissRequest = { subjectExpanded = false },
+                    ) {
+                        subjectOptions.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option) },
+                                onClick = {
+                                    subject = option
+                                    subjectExpanded = false
+                                    error = null
+                                },
+                            )
+                        }
+                    }
+                }
                 OutlinedTextField(topic, { topic = it }, label = { Text("Topic") }, singleLine = true)
                 OutlinedTextField(note, { note = it }, label = { Text("Optional short note") }, maxLines = 3)
                 if (initial == null) {
@@ -359,7 +437,7 @@ private fun TopicEditorDialog(
             Button(onClick = {
                 val date = try { LocalDate.parse(dateText) } catch (_: DateTimeParseException) { null }
                 when {
-                    subject.isBlank() -> error = "Enter a subject."
+                    subject !in subjectOptions -> error = "Select a subject."
                     topic.isBlank() -> error = "Enter a topic."
                     date == null -> error = "Use a valid date in YYYY-MM-DD format."
                     else -> onSave(subject, topic, note, date)
@@ -385,6 +463,7 @@ private fun ReviewDialog(
                 if (!checked) {
                     Text("Without opening your notes, say or write everything important you can remember. Then check your notes and correct what you missed.")
                     topic.note.takeIf { it.isNotBlank() }?.let { Text("Reminder: $it", style = MaterialTheme.typography.bodySmall) }
+                    Text("After you rate this review, the topic will be scheduled again. Reviews continue every 120 days at the final stage.", style = MaterialTheme.typography.bodySmall)
                 } else {
                     Text("How well did you recall the important information before checking your notes?")
                     OutcomeButton("Forgot", "Very little or nothing important", ReviewOutcome.FORGOT, onOutcome)
@@ -447,6 +526,7 @@ private fun SettingsDialog(
                     singleLine = true,
                 )
                 Text("Reminders are delivered approximately at the preferred time and only when something is due.", style = MaterialTheme.typography.bodySmall)
+                Text("Every completed review creates another review. Strong recall eventually repeats every 120 days rather than ending.", style = MaterialTheme.typography.bodySmall)
             }
         },
         confirmButton = {
