@@ -2,6 +2,7 @@ package com.vcebricks.revision.domain
 
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReviewProgressTest {
@@ -9,9 +10,10 @@ class ReviewProgressTest {
     private val due = LocalDate.of(2026, 7, 11)
 
     @Test
-    fun progress_startsAtZero() {
+    fun progress_hasVisibleFillAtIntervalStart() {
         val result = calculateReviewProgress(start, due, start)
-        assertEquals(0f, result.fraction)
+        assertTrue(result.fraction > 0f)
+        assertEquals(0.08f, result.fraction)
         assertEquals("10 days until review", result.statusText)
     }
 
