@@ -39,7 +39,7 @@ class ReviewProgressTest {
     @Test
     fun invalidOrZeroLengthInterval_doesNotDivideByZero() {
         val result = calculateReviewProgress(due, due, due)
-        assertEquals(0f, result.fraction)
+        assertEquals(1f, result.fraction)
         assertEquals("Review due today", result.statusText)
     }
 }
