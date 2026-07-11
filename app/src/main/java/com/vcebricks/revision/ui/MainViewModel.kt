@@ -11,12 +11,12 @@ import com.vcebricks.revision.domain.ReviewOutcome
 import com.vcebricks.revision.notifications.ReminderScheduler
 import java.time.Clock
 import java.time.LocalDate
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-
 
 data class MainUiState(
     val today: LocalDate = LocalDate.now(),
@@ -33,25 +33,34 @@ class MainViewModel(
     private val reminderScheduler: ReminderScheduler,
     private val clock: Clock = Clock.systemDefaultZone(),
 ) : ViewModel() {
-    private val today = LocalDate.now(clock)
+    private val today = MutableStateFlow(LocalDate.now(clock))
 
     val uiState: StateFlow<MainUiState> = combine(
         repository.observeActiveTopics(),
         repository.observeAllTopics(),
         settingsStore.settings,
-    ) { active, all, settings ->
-        val overdue = active.filter { it.nextReviewDateEpochDay < today.toEpochDay() }
-        val dueToday = active.filter { it.nextReviewDateEpochDay == today.toEpochDay() }
-        val upcoming = active.filter { it.nextReviewDateEpochDay > today.toEpochDay() }
+        today,
+    ) { active, all, settings, currentDate ->
+        val overdue = active.filter { it.nextReviewDateEpochDay < currentDate.toEpochDay() }
+        val dueToday = active.filter { it.nextReviewDateEpochDay == currentDate.toEpochDay() }
+        val upcoming = active.filter { it.nextReviewDateEpochDay > currentDate.toEpochDay() }
         MainUiState(
-            today = today,
+            today = currentDate,
             overdue = overdue,
             dueToday = dueToday,
             upcoming = upcoming,
             allTopics = all,
             settings = settings,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState(today = today))
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        MainUiState(today = today.value),
+    )
+
+    fun refreshToday() {
+        today.value = LocalDate.now(clock)
+    }
 
     fun addTopic(subject: String, topic: String, note: String, studyDate: LocalDate, onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
@@ -71,7 +80,9 @@ class MainViewModel(
 
     fun completeReview(id: Long, outcome: ReviewOutcome, onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
-            onResult(repository.completeReview(id, outcome, LocalDate.now(clock)))
+            val completionDate = LocalDate.now(clock)
+            today.value = completionDate
+            onResult(repository.completeReview(id, outcome, completionDate))
         }
     }
 
