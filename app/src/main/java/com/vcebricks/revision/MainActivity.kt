@@ -9,25 +9,34 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.ViewModelProvider
 import com.vcebricks.revision.ui.MainViewModel
 import com.vcebricks.revision.ui.RevisionApp
 
 class MainActivity : ComponentActivity() {
+    private lateinit var mainViewModel: MainViewModel
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val container = (application as RevisionApplication).container
+        mainViewModel = ViewModelProvider(
+            this,
+            MainViewModel.Factory(
+                container.repository,
+                container.settingsStore,
+                container.reminderScheduler,
+            ),
+        )[MainViewModel::class.java]
+
         setContent {
-            val viewModel: MainViewModel = viewModel(
-                factory = MainViewModel.Factory(
-                    container.repository,
-                    container.settingsStore,
-                    container.reminderScheduler,
-                ),
-            )
-            NotificationPermissionHost(viewModel)
+            NotificationPermissionHost(mainViewModel)
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::mainViewModel.isInitialized) mainViewModel.refreshToday()
     }
 }
 
