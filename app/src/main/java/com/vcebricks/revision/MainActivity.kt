@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.lifecycle.ViewModelProvider
 import com.vcebricks.revision.ui.MainViewModel
 import com.vcebricks.revision.ui.RevisionApp
+import com.vcebricks.revision.widgets.RevisionWidgetUpdater
 
 class MainActivity : ComponentActivity() {
     private lateinit var mainViewModel: MainViewModel
@@ -26,6 +27,7 @@ class MainActivity : ComponentActivity() {
                 container.repository,
                 container.settingsStore,
                 container.reminderScheduler,
+                refreshWidgets = { RevisionWidgetUpdater.updateAll(applicationContext) },
             ),
         )[MainViewModel::class.java]
 
