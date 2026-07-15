@@ -61,6 +61,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeParseException
+import java.time.temporal.ChronoUnit
 
 private enum class MainTab { TODAY, TOPICS }
 
@@ -101,9 +102,9 @@ private fun OnboardingScreen(onContinue: () -> Unit) {
         Spacer(Modifier.height(16.dp))
         Text("Record what you study. The app brings it back when it is time to practise remembering it.")
         Spacer(Modifier.height(12.dp))
-        Text("When a review is due, recall the important ideas before opening your notes, then rate how well you remembered.")
+        Text("Add an optional test date to keep each topic cycling until the test. After the test, press ‘I’ve taken the test’ to stop its future reminders without deleting history.")
         Spacer(Modifier.height(12.dp))
-        Text("Reviews do not stop after one attempt. Each topic is scheduled again, and strong topics continue every 120 days at the final stage.")
+        Text("Topics without a test date continue indefinitely, including 120-day reviews at the final stage.")
         Spacer(Modifier.height(28.dp))
         Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) { Text("Set up reminders") }
     }
@@ -122,6 +123,7 @@ private fun MainShell(
     var reviewTopic by remember { mutableStateOf<RevisionTopicEntity?>(null) }
     var editTopic by remember { mutableStateOf<RevisionTopicEntity?>(null) }
     var deleteTopic by remember { mutableStateOf<RevisionTopicEntity?>(null) }
+    var completeTestTopic by remember { mutableStateOf<RevisionTopicEntity?>(null) }
 
     Scaffold(
         topBar = {
@@ -161,6 +163,7 @@ private fun MainShell(
                 state = state,
                 modifier = Modifier.padding(padding),
                 onReview = { reviewTopic = it },
+                onTestTaken = { completeTestTopic = it },
             )
             MainTab.TOPICS -> TopicsScreen(
                 topics = state.allTopics,
@@ -169,6 +172,8 @@ private fun MainShell(
                 onEdit = { editTopic = it },
                 onArchive = { viewModel.archive(it.id, !it.isArchived) },
                 onDelete = { deleteTopic = it },
+                onTestTaken = { completeTestTopic = it },
+                onReopenTest = { viewModel.setTestCompleted(it.id, false) },
             )
         }
     }
@@ -178,8 +183,8 @@ private fun MainShell(
             title = "Add studied topic",
             initial = null,
             onDismiss = { showAdd = false },
-            onSave = { subject, topic, note, date ->
-                viewModel.addTopic(subject, topic, note, date) { if (it) showAdd = false }
+            onSave = { subject, topic, note, date, testDate ->
+                viewModel.addTopic(subject, topic, note, date, testDate) { if (it) showAdd = false }
             },
         )
     }
@@ -188,8 +193,8 @@ private fun MainShell(
             title = "Edit topic",
             initial = item,
             onDismiss = { editTopic = null },
-            onSave = { subject, topic, note, _ ->
-                viewModel.updateTopic(item.id, subject, topic, note) { if (it) editTopic = null }
+            onSave = { subject, topic, note, _, testDate ->
+                viewModel.updateTopic(item.id, subject, topic, note, testDate) { if (it) editTopic = null }
             },
         )
     }
@@ -216,6 +221,20 @@ private fun MainShell(
             dismissButton = { TextButton(onClick = { deleteTopic = null }) { Text("Cancel") } },
         )
     }
+    completeTestTopic?.let { item ->
+        AlertDialog(
+            onDismissRequest = { completeTestTopic = null },
+            title = { Text("Mark test as taken?") },
+            text = { Text("${item.subject}: ${item.topic} will stop appearing in active reviews. Its full review history will be kept.") },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.setTestCompleted(item.id, true)
+                    completeTestTopic = null
+                }) { Text("I’ve taken the test") }
+            },
+            dismissButton = { TextButton(onClick = { completeTestTopic = null }) { Text("Cancel") } },
+        )
+    }
     if (showSettings) {
         SettingsDialog(
             enabled = state.settings.notificationsEnabled,
@@ -232,7 +251,12 @@ private fun MainShell(
 }
 
 @Composable
-private fun TodayScreen(state: MainUiState, modifier: Modifier, onReview: (RevisionTopicEntity) -> Unit) {
+private fun TodayScreen(
+    state: MainUiState,
+    modifier: Modifier,
+    onReview: (RevisionTopicEntity) -> Unit,
+    onTestTaken: (RevisionTopicEntity) -> Unit,
+) {
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -254,15 +278,21 @@ private fun TodayScreen(state: MainUiState, modifier: Modifier, onReview: (Revis
         }
         if (state.overdue.isNotEmpty()) {
             item { SectionTitle("Overdue") }
-            items(state.overdue, key = { it.id }) { TopicCard(it, state.today, true) { onReview(it) } }
+            items(state.overdue, key = { it.id }) { item ->
+                TopicCard(item, state.today, true, { onReview(item) }, { onTestTaken(item) })
+            }
         }
         if (state.dueToday.isNotEmpty()) {
             item { SectionTitle("Due today") }
-            items(state.dueToday, key = { it.id }) { TopicCard(it, state.today, true) { onReview(it) } }
+            items(state.dueToday, key = { it.id }) { item ->
+                TopicCard(item, state.today, true, { onReview(item) }, { onTestTaken(item) })
+            }
         }
         if (state.upcoming.isNotEmpty()) {
             item { SectionTitle("Upcoming") }
-            items(state.upcoming.take(7), key = { it.id }) { TopicCard(it, state.today, false, null) }
+            items(state.upcoming.take(7), key = { it.id }) { item ->
+                TopicCard(item, state.today, false, null, { onTestTaken(item) })
+            }
         }
         item { Spacer(Modifier.height(88.dp)) }
     }
@@ -276,6 +306,8 @@ private fun TopicsScreen(
     onEdit: (RevisionTopicEntity) -> Unit,
     onArchive: (RevisionTopicEntity) -> Unit,
     onDelete: (RevisionTopicEntity) -> Unit,
+    onTestTaken: (RevisionTopicEntity) -> Unit,
+    onReopenTest: (RevisionTopicEntity) -> Unit,
 ) {
     var search by remember { mutableStateOf("") }
     val filtered = topics.filter {
@@ -300,11 +332,23 @@ private fun TopicsScreen(
                 Column(Modifier.padding(16.dp)) {
                     Text(item.subject, style = MaterialTheme.typography.labelLarge)
                     Text(item.topic, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    if (item.isArchived) {
-                        Text("Archived")
-                    } else {
-                        Spacer(Modifier.height(8.dp))
-                        ReviewProgressIndicator(item, today)
+                    when {
+                        item.testCompletedAtEpochMillis != null -> {
+                            Text("Test completed · review history preserved", style = MaterialTheme.typography.bodySmall)
+                            TextButton(onClick = { onReopenTest(item) }) { Text("Reopen revisions") }
+                        }
+                        item.isArchived -> Text("Archived")
+                        else -> {
+                            Spacer(Modifier.height(8.dp))
+                            ReviewProgressIndicator(item, today)
+                            TestStatus(item, today)
+                            if (item.testDateEpochDay != null) {
+                                OutlinedButton(
+                                    onClick = { onTestTaken(item) },
+                                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                                ) { Text("I’ve taken the test") }
+                            }
+                        }
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         IconButton(onClick = { onEdit(item) }) { Icon(Icons.Default.Edit, "Edit") }
@@ -329,6 +373,7 @@ private fun TopicCard(
     today: LocalDate,
     reviewEnabled: Boolean,
     onReview: (() -> Unit)?,
+    onTestTaken: (() -> Unit)?,
 ) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
@@ -345,6 +390,13 @@ private fun TopicCard(
             }
             Spacer(Modifier.height(10.dp))
             ReviewProgressIndicator(item, today)
+            TestStatus(item, today)
+            val testDate = item.testDateEpochDay?.let(LocalDate::ofEpochDay)
+            if (testDate != null && !testDate.isAfter(today) && onTestTaken != null) {
+                OutlinedButton(onClick = onTestTaken, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                    Text("I’ve taken the test")
+                }
+            }
         }
     }
 }
@@ -362,17 +414,31 @@ private fun ReviewProgressIndicator(item: RevisionTopicEntity, today: LocalDate)
     Box(
         Modifier
             .fillMaxWidth()
-            .height(7.dp)
+            .height(9.dp)
             .clip(RoundedCornerShape(50))
             .background(MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Box(
             Modifier
                 .fillMaxWidth(progress.fraction)
-                .height(7.dp)
+                .height(9.dp)
+                .clip(RoundedCornerShape(50))
                 .background(MaterialTheme.colorScheme.primary),
         )
     }
+}
+
+@Composable
+private fun TestStatus(item: RevisionTopicEntity, today: LocalDate) {
+    val testDate = item.testDateEpochDay?.let(LocalDate::ofEpochDay) ?: return
+    val days = ChronoUnit.DAYS.between(today, testDate)
+    val text = when {
+        days < 0 -> "Test date passed · mark it as taken when finished"
+        days == 0L -> "Test today"
+        days == 1L -> "Test tomorrow"
+        else -> "$days days until test"
+    }
+    Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 7.dp))
 }
 
 @Composable
@@ -380,7 +446,7 @@ private fun TopicEditorDialog(
     title: String,
     initial: RevisionTopicEntity?,
     onDismiss: () -> Unit,
-    onSave: (String, String, String, LocalDate) -> Unit,
+    onSave: (String, String, String, LocalDate, LocalDate?) -> Unit,
 ) {
     var subject by remember(initial?.id) {
         mutableStateOf(initial?.subject?.takeIf { it in subjectOptions }.orEmpty())
@@ -391,6 +457,9 @@ private fun TopicEditorDialog(
     var dateText by remember(initial?.id) {
         mutableStateOf(initial?.let { LocalDate.ofEpochDay(it.studyDateEpochDay).toString() } ?: LocalDate.now().toString())
     }
+    var testDateText by remember(initial?.id) {
+        mutableStateOf(initial?.testDateEpochDay?.let(LocalDate::ofEpochDay)?.toString().orEmpty())
+    }
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -398,16 +467,10 @@ private fun TopicEditorDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(Modifier.fillMaxWidth()) {
-                    OutlinedButton(
-                        onClick = { subjectExpanded = true },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
+                    OutlinedButton(onClick = { subjectExpanded = true }, modifier = Modifier.fillMaxWidth()) {
                         Text(if (subject.isBlank()) "Select subject ▼" else "$subject ▼")
                     }
-                    DropdownMenu(
-                        expanded = subjectExpanded,
-                        onDismissRequest = { subjectExpanded = false },
-                    ) {
+                    DropdownMenu(expanded = subjectExpanded, onDismissRequest = { subjectExpanded = false }) {
                         subjectOptions.forEach { option ->
                             DropdownMenuItem(
                                 text = { Text(option) },
@@ -430,22 +493,38 @@ private fun TopicEditorDialog(
                         singleLine = true,
                     )
                 }
+                OutlinedTextField(
+                    testDateText,
+                    { testDateText = it },
+                    label = { Text("Test date (optional, YYYY-MM-DD)") },
+                    singleLine = true,
+                )
+                Text("With a test date, reviews are capped at test day until you mark the test as taken.", style = MaterialTheme.typography.bodySmall)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {
             Button(onClick = {
-                val date = try { LocalDate.parse(dateText) } catch (_: DateTimeParseException) { null }
+                val studyDate = parseDate(dateText)
+                val testDate = if (testDateText.isBlank()) null else parseDate(testDateText)
                 when {
                     subject !in subjectOptions -> error = "Select a subject."
                     topic.isBlank() -> error = "Enter a topic."
-                    date == null -> error = "Use a valid date in YYYY-MM-DD format."
-                    else -> onSave(subject, topic, note, date)
+                    studyDate == null -> error = "Use a valid study date in YYYY-MM-DD format."
+                    testDateText.isNotBlank() && testDate == null -> error = "Use a valid test date in YYYY-MM-DD format."
+                    testDate != null && testDate.isBefore(studyDate) -> error = "The test date cannot be before the study date."
+                    else -> onSave(subject, topic, note, studyDate, testDate)
                 }
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+private fun parseDate(value: String): LocalDate? = try {
+    LocalDate.parse(value)
+} catch (_: DateTimeParseException) {
+    null
 }
 
 @Composable
@@ -463,7 +542,12 @@ private fun ReviewDialog(
                 if (!checked) {
                     Text("Without opening your notes, say or write everything important you can remember. Then check your notes and correct what you missed.")
                     topic.note.takeIf { it.isNotBlank() }?.let { Text("Reminder: $it", style = MaterialTheme.typography.bodySmall) }
-                    Text("After you rate this review, the topic will be scheduled again. Reviews continue every 120 days at the final stage.", style = MaterialTheme.typography.bodySmall)
+                    val testDate = topic.testDateEpochDay?.let(LocalDate::ofEpochDay)
+                    Text(
+                        if (testDate != null) "This topic will continue being scheduled up to $testDate, until you mark the test as taken."
+                        else "After you rate this review, the topic will be scheduled again indefinitely.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 } else {
                     Text("How well did you recall the important information before checking your notes?")
                     OutcomeButton("Forgot", "Very little or nothing important", ReviewOutcome.FORGOT, onOutcome)
@@ -498,10 +582,8 @@ private fun SettingsDialog(
     onSave: (Boolean, Int, Int) -> Unit,
 ) {
     var notifications by remember { mutableStateOf(enabled) }
-    var hour by remember { mutableIntStateOf(initialHour) }
-    var minute by remember { mutableIntStateOf(initialMinute) }
-    var hourText by remember { mutableStateOf(hour.toString()) }
-    var minuteText by remember { mutableStateOf(minute.toString().padStart(2, '0')) }
+    var hourText by remember { mutableStateOf(initialHour.toString()) }
+    var minuteText by remember { mutableStateOf(initialMinute.toString().padStart(2, '0')) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Settings") },
@@ -525,14 +607,14 @@ private fun SettingsDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                 )
-                Text("Reminders are delivered approximately at the preferred time and only when something is due.", style = MaterialTheme.typography.bodySmall)
-                Text("Every completed review creates another review. Strong recall eventually repeats every 120 days rather than ending.", style = MaterialTheme.typography.bodySmall)
+                Text("One daily reminder time covers all subjects. Each topic still has its own adaptive review date.", style = MaterialTheme.typography.bodySmall)
+                Text("Reminders are approximate and only appear when something is due.", style = MaterialTheme.typography.bodySmall)
             }
         },
         confirmButton = {
             Button(onClick = {
-                hour = hourText.toIntOrNull()?.coerceIn(0, 23) ?: 18
-                minute = minuteText.toIntOrNull()?.coerceIn(0, 59) ?: 0
+                val hour = hourText.toIntOrNull()?.coerceIn(0, 23) ?: 18
+                val minute = minuteText.toIntOrNull()?.coerceIn(0, 59) ?: 0
                 onSave(notifications, hour, minute)
             }) { Text("Save") }
         },
