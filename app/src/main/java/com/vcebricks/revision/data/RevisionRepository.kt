@@ -3,6 +3,7 @@ package com.vcebricks.revision.data
 import androidx.room.withTransaction
 import com.vcebricks.revision.domain.ReviewOutcome
 import com.vcebricks.revision.domain.ReviewScheduler
+import com.vcebricks.revision.domain.capReviewAtTestDate
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
@@ -42,7 +43,7 @@ class RevisionRepository(
                 createdAtEpochMillis = now,
                 updatedAtEpochMillis = now,
                 stageIndex = 0,
-                nextReviewDateEpochDay = capAtTestDate(firstReview, testDate, studyDate).toEpochDay(),
+                nextReviewDateEpochDay = capReviewAtTestDate(firstReview, testDate, studyDate).toEpochDay(),
                 testDateEpochDay = testDate?.toEpochDay(),
             ),
         )
@@ -66,7 +67,7 @@ class RevisionRepository(
         val adjustedNext = if (existing.testCompletedAtEpochMillis != null) {
             currentNext
         } else {
-            capAtTestDate(currentNext, testDate, LocalDate.now(clock))
+            capReviewAtTestDate(currentNext, testDate, LocalDate.now(clock))
         }
         dao.updateTopic(
             existing.copy(
@@ -87,7 +88,7 @@ class RevisionRepository(
             existing.copy(
                 isArchived = archived,
                 nextReviewDateEpochDay = if (!archived && existing.nextReviewDateEpochDay < today.toEpochDay()) {
-                    capAtTestDate(today.plusDays(1), existing.testDateEpochDay?.let(LocalDate::ofEpochDay), today).toEpochDay()
+                    capReviewAtTestDate(today.plusDays(1), existing.testDateEpochDay?.let(LocalDate::ofEpochDay), today).toEpochDay()
                 } else {
                     existing.nextReviewDateEpochDay
                 },
@@ -124,7 +125,7 @@ class RevisionRepository(
             if (existing.isArchived || existing.testCompletedAtEpochMillis != null) return@withTransaction false
             val result = scheduler.nextReview(existing.stageIndex, outcome, completionDate)
             val testDate = existing.testDateEpochDay?.let(LocalDate::ofEpochDay)
-            val nextReview = capAtTestDate(result.nextReviewDate, testDate, completionDate)
+            val nextReview = capReviewAtTestDate(result.nextReviewDate, testDate, completionDate)
             val completedAt = Instant.now(clock).toEpochMilli()
             val attempt = ReviewAttemptEntity(
                 topicId = id,
@@ -153,11 +154,4 @@ class RevisionRepository(
     suspend fun getDueTopics(today: LocalDate): List<RevisionTopicEntity> = dao.getDueTopics(today.toEpochDay())
 
     suspend fun getActiveTopicsSnapshot(): List<RevisionTopicEntity> = dao.getActiveTopicsSnapshot()
-
-    private fun capAtTestDate(proposedDate: LocalDate, testDate: LocalDate?, floorDate: LocalDate): LocalDate = when {
-        testDate == null -> proposedDate
-        testDate.isBefore(floorDate) -> floorDate
-        proposedDate.isAfter(testDate) -> testDate
-        else -> proposedDate
-    }
 }
