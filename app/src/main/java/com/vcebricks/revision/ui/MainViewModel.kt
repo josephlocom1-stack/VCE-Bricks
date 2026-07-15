@@ -31,6 +31,7 @@ class MainViewModel(
     private val repository: RevisionRepository,
     private val settingsStore: SettingsStore,
     private val reminderScheduler: ReminderScheduler,
+    private val refreshWidgets: () -> Unit = {},
     private val clock: Clock = Clock.systemDefaultZone(),
 ) : ViewModel() {
     private val today = MutableStateFlow(LocalDate.now(clock))
@@ -60,20 +61,41 @@ class MainViewModel(
 
     fun refreshToday() {
         today.value = LocalDate.now(clock)
+        refreshWidgets()
     }
 
-    fun addTopic(subject: String, topic: String, note: String, studyDate: LocalDate, onResult: (Boolean) -> Unit) {
+    fun addTopic(
+        subject: String,
+        topic: String,
+        note: String,
+        studyDate: LocalDate,
+        testDate: LocalDate?,
+        onResult: (Boolean) -> Unit,
+    ) {
         viewModelScope.launch {
-            runCatching { repository.addTopic(subject, topic, note, studyDate) }
-                .onSuccess { onResult(true) }
+            runCatching { repository.addTopic(subject, topic, note, studyDate, testDate) }
+                .onSuccess {
+                    refreshWidgets()
+                    onResult(true)
+                }
                 .onFailure { onResult(false) }
         }
     }
 
-    fun updateTopic(id: Long, subject: String, topic: String, note: String, onResult: (Boolean) -> Unit) {
+    fun updateTopic(
+        id: Long,
+        subject: String,
+        topic: String,
+        note: String,
+        testDate: LocalDate?,
+        onResult: (Boolean) -> Unit,
+    ) {
         viewModelScope.launch {
-            runCatching { repository.updateTopic(id, subject, topic, note) }
-                .onSuccess { onResult(true) }
+            runCatching { repository.updateTopic(id, subject, topic, note, testDate) }
+                .onSuccess {
+                    refreshWidgets()
+                    onResult(true)
+                }
                 .onFailure { onResult(false) }
         }
     }
@@ -82,12 +104,26 @@ class MainViewModel(
         viewModelScope.launch {
             val completionDate = LocalDate.now(clock)
             today.value = completionDate
-            onResult(repository.completeReview(id, outcome, completionDate))
+            val completed = repository.completeReview(id, outcome, completionDate)
+            if (completed) refreshWidgets()
+            onResult(completed)
         }
     }
 
-    fun archive(id: Long, archived: Boolean) = viewModelScope.launch { repository.setArchived(id, archived) }
-    fun delete(id: Long) = viewModelScope.launch { repository.deleteTopic(id) }
+    fun archive(id: Long, archived: Boolean) = viewModelScope.launch {
+        repository.setArchived(id, archived)
+        refreshWidgets()
+    }
+
+    fun setTestCompleted(id: Long, completed: Boolean) = viewModelScope.launch {
+        repository.setTestCompleted(id, completed)
+        refreshWidgets()
+    }
+
+    fun delete(id: Long) = viewModelScope.launch {
+        repository.deleteTopic(id)
+        refreshWidgets()
+    }
 
     fun completeOnboarding() = viewModelScope.launch {
         settingsStore.completeOnboarding()
@@ -103,9 +139,10 @@ class MainViewModel(
         private val repository: RevisionRepository,
         private val settingsStore: SettingsStore,
         private val reminderScheduler: ReminderScheduler,
+        private val refreshWidgets: () -> Unit = {},
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            MainViewModel(repository, settingsStore, reminderScheduler) as T
+            MainViewModel(repository, settingsStore, reminderScheduler, refreshWidgets) as T
     }
 }
