@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.Flow
     indices = [
         Index("nextReviewDateEpochDay"),
         Index("isArchived"),
+        Index("testDateEpochDay"),
+        Index("testCompletedAtEpochMillis"),
     ],
 )
 data class RevisionTopicEntity(
@@ -35,6 +37,8 @@ data class RevisionTopicEntity(
     val nextReviewDateEpochDay: Long,
     val lastReviewedAtEpochMillis: Long? = null,
     val isArchived: Boolean = false,
+    val testDateEpochDay: Long? = null,
+    val testCompletedAtEpochMillis: Long? = null,
 )
 
 @Entity(
@@ -78,17 +82,20 @@ class DatabaseConverters {
 
 @Dao
 interface RevisionDao {
-    @Query("SELECT * FROM revision_topics WHERE isArchived = 0 ORDER BY nextReviewDateEpochDay ASC, subject COLLATE NOCASE ASC, topic COLLATE NOCASE ASC")
+    @Query("SELECT * FROM revision_topics WHERE isArchived = 0 AND testCompletedAtEpochMillis IS NULL ORDER BY nextReviewDateEpochDay ASC, subject COLLATE NOCASE ASC, topic COLLATE NOCASE ASC")
     fun observeActiveTopics(): Flow<List<RevisionTopicEntity>>
 
-    @Query("SELECT * FROM revision_topics ORDER BY isArchived ASC, nextReviewDateEpochDay ASC, subject COLLATE NOCASE ASC, topic COLLATE NOCASE ASC")
+    @Query("SELECT * FROM revision_topics ORDER BY testCompletedAtEpochMillis IS NOT NULL ASC, isArchived ASC, nextReviewDateEpochDay ASC, subject COLLATE NOCASE ASC, topic COLLATE NOCASE ASC")
     fun observeAllTopics(): Flow<List<RevisionTopicEntity>>
 
     @Query("SELECT * FROM revision_topics WHERE id = :id LIMIT 1")
     suspend fun getTopic(id: Long): RevisionTopicEntity?
 
-    @Query("SELECT * FROM revision_topics WHERE isArchived = 0 AND nextReviewDateEpochDay <= :todayEpochDay ORDER BY nextReviewDateEpochDay ASC, subject COLLATE NOCASE ASC")
+    @Query("SELECT * FROM revision_topics WHERE isArchived = 0 AND testCompletedAtEpochMillis IS NULL AND nextReviewDateEpochDay <= :todayEpochDay ORDER BY nextReviewDateEpochDay ASC, subject COLLATE NOCASE ASC")
     suspend fun getDueTopics(todayEpochDay: Long): List<RevisionTopicEntity>
+
+    @Query("SELECT * FROM revision_topics WHERE isArchived = 0 AND testCompletedAtEpochMillis IS NULL ORDER BY nextReviewDateEpochDay ASC, subject COLLATE NOCASE ASC, topic COLLATE NOCASE ASC")
+    suspend fun getActiveTopicsSnapshot(): List<RevisionTopicEntity>
 
     @Query("SELECT * FROM review_attempts WHERE topicId = :topicId ORDER BY completedAtEpochMillis DESC")
     fun observeAttempts(topicId: Long): Flow<List<ReviewAttemptEntity>>
@@ -108,7 +115,7 @@ interface RevisionDao {
 
 @Database(
     entities = [RevisionTopicEntity::class, ReviewAttemptEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 @TypeConverters(DatabaseConverters::class)
