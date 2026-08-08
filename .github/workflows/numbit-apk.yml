@@ -57,22 +57,28 @@ jobs:
         env:
           CI: '1'
         run: npx expo prebuild --platform android --no-install
-      - name: Build signed debug APK
+      - name: Configure optimized release
+        run: |
+          cat >> android/gradle.properties <<'EOF'
+          reactNativeArchitectures=arm64-v8a
+          android.enableMinifyInReleaseBuilds=true
+          android.enableShrinkResourcesInReleaseBuilds=true
+          EOF
+      - name: Build optimized release APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
-          cp app/build/outputs/apk/debug/app-debug.apk ../Numbit.apk
+          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk ../Numbit.apk
       - name: Validate APK
         run: |
           test -s Numbit.apk
           file Numbit.apk
+          ls -lh Numbit.apk
           sha256sum Numbit.apk | tee Numbit.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: Numbit-APK
-          path: |
-            numbit-build/Numbit.apk
-            numbit-build/Numbit.apk.sha256
+          name: Numbit-Release-APK
+          path: numbit-build/Numbit.apk
           if-no-files-found: error
           retention-days: 1
