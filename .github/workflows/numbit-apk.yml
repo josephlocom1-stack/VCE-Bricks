@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '20'
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -57,28 +57,26 @@ jobs:
         env:
           CI: '1'
         run: npx expo prebuild --platform android --no-install
-      - name: Configure optimized release
-        run: |
-          cat >> android/gradle.properties <<'EOF'
-          reactNativeArchitectures=arm64-v8a
-          android.enableMinifyInReleaseBuilds=true
-          android.enableShrinkResourcesInReleaseBuilds=true
-          EOF
-      - name: Build optimized release APK
+      - name: Configure arm64 build
+        run: echo 'reactNativeArchitectures=arm64-v8a' >> android/gradle.properties
+      - name: Build compact arm64 APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
-          cp app/build/outputs/apk/release/app-release.apk ../Numbit.apk
-      - name: Validate APK
+          ./gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk ../Numbit.apk
+      - name: Validate APK and size
         run: |
           test -s Numbit.apk
           file Numbit.apk
           ls -lh Numbit.apk
+          bytes=$(stat -c%s Numbit.apk)
+          echo "APK bytes: $bytes"
+          test "$bytes" -lt 104857600
           sha256sum Numbit.apk | tee Numbit.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: Numbit-Release-APK
+          name: Numbit-Compact-APK
           path: numbit-build/Numbit.apk
           if-no-files-found: error
           retention-days: 1
