@@ -1,0 +1,83 @@
+name: Temporary Numbit APK Build
+
+on:
+  push:
+    branches: [numbit-apk-build]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: numbit-build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: numbit-build/package.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Generate temporary release assets
+        run: |
+          mkdir -p assets
+          python3 - <<'PY'
+          import struct,zlib,os
+          def png(path,w,h,bg=(15,17,21),fg=(90,140,255)):
+              rows=[]
+              for y in range(h):
+                  row=bytearray([0])
+                  for x in range(w):
+                      # Bold geometric N with generous safe area.
+                      t=max(8,w//10); m=w//4
+                      left=(m<=x<m+t and m<=y<h-m)
+                      right=(w-m-t<=x<w-m and m<=y<h-m)
+                      diag=(m<=x<w-m and m<=y<h-m and abs((x-m)-(y-m)*(w-2*m)/(h-2*m))<t)
+                      c=fg if left or right or diag else bg
+                      row.extend((*c,255))
+                  rows.append(bytes(row))
+              raw=b''.join(rows)
+              def chunk(k,d):
+                  return struct.pack('>I',len(d))+k+d+struct.pack('>I',zlib.crc32(k+d)&0xffffffff)
+              data=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,8,6,0,0,0))+chunk(b'IDAT',zlib.compress(raw,9))+chunk(b'IEND',b'')
+              open(path,'wb').write(data)
+          png('assets/icon.png',1024,1024)
+          png('assets/splash-icon.png',512,512)
+          png('assets/android-icon-foreground.png',1024,1024,(15,17,21),(90,140,255))
+          png('assets/android-icon-background.png',1024,1024,(15,17,21),(15,17,21))
+          png('assets/android-icon-monochrome.png',432,432,(0,0,0),(255,255,255))
+          png('assets/favicon.png',192,192)
+          PY
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: TypeScript check
+        run: npm run typecheck
+      - name: Expo prebuild
+        run: npx expo prebuild --platform android --non-interactive
+      - name: Build signed debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk ../Numbit.apk
+      - name: Validate APK
+        run: |
+          test -s Numbit.apk
+          file Numbit.apk
+          sha256sum Numbit.apk | tee Numbit.apk.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Numbit-APK
+          path: |
+            numbit-build/Numbit.apk
+            numbit-build/Numbit.apk.sha256
+          if-no-files-found: error
+          retention-days: 1
