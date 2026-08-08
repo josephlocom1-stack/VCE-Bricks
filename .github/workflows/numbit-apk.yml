@@ -6,57 +6,96 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: read
   contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: numbit-build
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
-      - name: Install signing tools
-        run: sdkmanager 'build-tools;36.0.0'
-      - name: Download last verified Numbit APK
+
+      - name: Generate Numbit assets
+        run: |
+          mkdir -p assets
+          python3 - <<'PY'
+          import struct,zlib
+          def make(path,w,h,bg=(15,17,21),fg=(90,140,255)):
+              rows=[]; t=max(8,w//10); m=w//4
+              for y in range(h):
+                  row=bytearray([0])
+                  for x in range(w):
+                      left=m<=x<m+t and m<=y<h-m
+                      right=w-m-t<=x<w-m and m<=y<h-m
+                      diag=m<=x<w-m and m<=y<h-m and abs((x-m)-(y-m)*(w-2*m)/(h-2*m))<t
+                      c=fg if left or right or diag else bg
+                      row.extend((*c,255))
+                  rows.append(bytes(row))
+              raw=b''.join(rows)
+              def ch(k,d): return struct.pack('>I',len(d))+k+d+struct.pack('>I',zlib.crc32(k+d)&0xffffffff)
+              open(path,'wb').write(b'\x89PNG\r\n\x1a\n'+ch(b'IHDR',struct.pack('>IIBBBBB',w,h,8,6,0,0,0))+ch(b'IDAT',zlib.compress(raw,9))+ch(b'IEND',b''))
+          make('assets/icon.png',1024,1024)
+          make('assets/splash-icon.png',512,512)
+          make('assets/android-icon-foreground.png',1024,1024)
+          make('assets/android-icon-background.png',1024,1024,(15,17,21),(15,17,21))
+          make('assets/android-icon-monochrome.png',432,432,(0,0,0),(255,255,255))
+          make('assets/favicon.png',192,192)
+          PY
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Verify source
+        run: |
+          npm test
+          npm run typecheck
+
+      - name: Expo prebuild
         env:
-          GH_TOKEN: ${{ github.token }}
+          CI: '1'
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build standalone release APK
         run: |
-          mkdir -p /tmp/numbit-source
-          gh run download 31252218159 --repo '${{ github.repository }}' -n Numbit-APK -D /tmp/numbit-source
-          find /tmp/numbit-source -maxdepth 2 -type f -ls
-          src=$(find /tmp/numbit-source -type f -name '*.apk' | head -n1)
-          test -n "$src"
-          cp "$src" /tmp/Numbit-stripped.apk
-      - name: Keep ARM phone architectures only
-        run: |
-          zip -d /tmp/Numbit-stripped.apk 'lib/x86/*' 'lib/x86_64/*' 'META-INF/*.SF' 'META-INF/*.RSA' 'META-INF/*.DSA' 'META-INF/MANIFEST.MF' || true
-          unzip -l /tmp/Numbit-stripped.apk | grep 'lib/' | head -n 30
-      - name: Align and sign compact APK
-        run: |
-          keytool -genkeypair -keystore /tmp/numbit.keystore -storepass android -keypass android -alias numbit -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=Numbit,O=Numbit,C=AU'
-          BT="$ANDROID_HOME/build-tools/36.0.0"
-          "$BT/zipalign" -P 16 -f -v 4 /tmp/Numbit-stripped.apk /tmp/Numbit-aligned.apk
-          "$BT/apksigner" sign --ks /tmp/numbit.keystore --ks-key-alias numbit --ks-pass pass:android --key-pass pass:android --out Numbit.apk /tmp/Numbit-aligned.apk
-          "$BT/apksigner" verify --verbose --print-certs Numbit.apk
-      - name: Validate size and package
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=armeabi-v7a,arm64-v8a
+          cp app/build/outputs/apk/release/app-release.apk ../Numbit.apk
+
+      - name: Validate standalone APK
         run: |
           test -s Numbit.apk
-          bytes=$(stat -c%s Numbit.apk)
-          echo "Final APK bytes: $bytes"
-          ls -lh Numbit.apk
-          test "$bytes" -lt 104857600
-          sha256sum Numbit.apk
+          echo 'Checking embedded JavaScript bundle...'
+          unzip -l Numbit.apk | grep 'assets/index.android.bundle'
+          echo 'Checking phone ABIs...'
           unzip -l Numbit.apk | grep -q 'lib/arm64-v8a/'
           unzip -l Numbit.apk | grep -q 'lib/armeabi-v7a/'
-          if unzip -l Numbit.apk | grep -q 'lib/x86'; then exit 1; fi
+          if unzip -l Numbit.apk | grep -q 'lib/x86'; then
+            echo 'Unexpected x86 ABI found'
+            exit 1
+          fi
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose Numbit.apk
+          bytes=$(stat -c%s Numbit.apk)
+          echo "Final release APK bytes: $bytes"
+          ls -lh Numbit.apk
+          sha256sum Numbit.apk | tee Numbit.apk.sha256
+
       - uses: actions/upload-artifact@v4
         with:
-          name: Numbit-Drive-APK
-          path: Numbit.apk
+          name: Numbit-Standalone-APK
+          path: |
+            numbit-build/Numbit.apk
+            numbit-build/Numbit.apk.sha256
           if-no-files-found: error
           retention-days: 1
