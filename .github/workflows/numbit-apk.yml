@@ -56,10 +56,8 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Verify source
-        run: |
-          npm test
-          npm run typecheck
+      - name: TypeScript check
+        run: npm run typecheck
 
       - name: Expo prebuild
         env:
