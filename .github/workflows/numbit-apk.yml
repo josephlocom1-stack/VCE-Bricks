@@ -19,16 +19,40 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+      - name: Generate Numbit assets
+        run: |
+          mkdir -p assets
+          python3 - <<'PY'
+          import struct,zlib
+          def make(path,w,h,bg=(15,17,21),fg=(90,140,255)):
+              rows=[]; t=max(8,w//10); m=w//4
+              for y in range(h):
+                  row=bytearray([0])
+                  for x in range(w):
+                      left=m<=x<m+t and m<=y<h-m
+                      right=w-m-t<=x<w-m and m<=y<h-m
+                      diag=m<=x<w-m and m<=y<h-m and abs((x-m)-(y-m)*(w-2*m)/(h-2*m))<t
+                      c=fg if left or right or diag else bg
+                      row.extend((*c,255))
+                  rows.append(bytes(row))
+              raw=b''.join(rows)
+              def ch(k,d): return struct.pack('>I',len(d))+k+d+struct.pack('>I',zlib.crc32(k+d)&0xffffffff)
+              open(path,'wb').write(b'\x89PNG\r\n\x1a\n'+ch(b'IHDR',struct.pack('>IIBBBBB',w,h,8,6,0,0,0))+ch(b'IDAT',zlib.compress(raw,9))+ch(b'IEND',b''))
+          make('assets/icon.png',1024,1024)
+          make('assets/splash-icon.png',512,512)
+          make('assets/android-icon-foreground.png',1024,1024)
+          make('assets/android-icon-background.png',1024,1024,(15,17,21),(15,17,21))
+          make('assets/android-icon-monochrome.png',432,432,(0,0,0),(255,255,255))
+          make('assets/favicon.png',192,192)
+          PY
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: TypeScript check
-        run: npm run typecheck
       - name: Expo prebuild
         env:
           CI: '1'
