@@ -1,0 +1,26 @@
+name: Mini4X APK public relay
+permissions:
+  contents: write
+on:
+  push:
+    branches: [mini4x-apk-relay]
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download and verify compiled Mini4X APK
+        run: |
+          set -euxo pipefail
+          mkdir -p relay
+          curl -L --fail --retry 3 --connect-timeout 15 --max-time 120 \
+            'https://tmpfiles.org/dl/wIwCOW1AEgZc/mini4x-v1.1-skeleton.apk' \
+            -o relay/Mini4X-v1.1-skeleton.apk
+          echo '6b5e5d7549bf9ed2ecf62e04dfadd18f4de2d2478fdbb0e2b6cd5bfcf1982e71  relay/Mini4X-v1.1-skeleton.apk' | sha256sum -c -
+          unzip -t relay/Mini4X-v1.1-skeleton.apk
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add relay/Mini4X-v1.1-skeleton.apk
+          git commit -m 'Relay compiled Mini4X APK [skip ci]' || true
+          git push origin HEAD:mini4x-apk-relay
