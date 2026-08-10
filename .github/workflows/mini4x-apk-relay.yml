@@ -1,25 +1,29 @@
-name: Mini4X APK public artifact relay
+name: Mini4X Android signing tools relay
 permissions:
   contents: read
 on:
   push:
     branches: [mini4x-apk-relay]
 jobs:
-  relay:
+  tools:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
-      - name: Verify compiled APK
+      - uses: android-actions/setup-android@v3
+      - name: Install official Android build tools
         run: |
           set -euxo pipefail
-          APK=relay/Mini4X-v1.1-skeleton.apk
-          echo '6b5e5d7549bf9ed2ecf62e04dfadd18f4de2d2478fdbb0e2b6cd5bfcf1982e71  relay/Mini4X-v1.1-skeleton.apk' | sha256sum -c -
-          unzip -t "$APK"
-      - name: Upload APK relay artifact
+          sdkmanager "build-tools;35.0.0"
+          mkdir -p relay_tools/lib
+          cp "$ANDROID_SDK_ROOT/build-tools/35.0.0/zipalign" relay_tools/zipalign
+          cp "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" relay_tools/apksigner
+          cp "$ANDROID_SDK_ROOT/build-tools/35.0.0/lib/apksigner.jar" relay_tools/lib/apksigner.jar
+          chmod +x relay_tools/zipalign relay_tools/apksigner
+          sha256sum relay_tools/zipalign relay_tools/apksigner relay_tools/lib/apksigner.jar
+      - name: Upload official Android signing tools
         uses: actions/upload-artifact@v4
         with:
-          name: Mini4X-v1.1-skeleton-public-relay
-          path: relay/Mini4X-v1.1-skeleton.apk
+          name: android-build-tools-35-signing
+          path: relay_tools
           compression-level: 0
           retention-days: 1
