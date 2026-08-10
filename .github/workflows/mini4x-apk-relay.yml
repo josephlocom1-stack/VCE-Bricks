@@ -15,7 +15,7 @@ jobs:
           set -euxo pipefail
           mkdir -p relay
           curl -L --fail --retry 3 --connect-timeout 15 --max-time 120 \
-            'https://tmpfiles.org/dl/wIwCOW1AEgZc/mini4x-v1.1-skeleton.apk' \
+            'https://litter.catbox.moe/w7xiz4.apk' \
             -o relay/Mini4X-v1.1-skeleton.apk
           echo '6b5e5d7549bf9ed2ecf62e04dfadd18f4de2d2478fdbb0e2b6cd5bfcf1982e71  relay/Mini4X-v1.1-skeleton.apk' | sha256sum -c -
           unzip -t relay/Mini4X-v1.1-skeleton.apk
