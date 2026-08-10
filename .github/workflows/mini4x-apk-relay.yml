@@ -14,16 +14,18 @@ jobs:
         run: |
           set -euxo pipefail
           sdkmanager "build-tools;35.0.0"
-          mkdir -p relay_tools/lib
+          mkdir -p relay_tools/lib relay_tools/lib64
           cp "$ANDROID_SDK_ROOT/build-tools/35.0.0/zipalign" relay_tools/zipalign
           cp "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" relay_tools/apksigner
           cp "$ANDROID_SDK_ROOT/build-tools/35.0.0/lib/apksigner.jar" relay_tools/lib/apksigner.jar
+          if [ -f "$ANDROID_SDK_ROOT/build-tools/35.0.0/lib64/libc++.so" ]; then cp "$ANDROID_SDK_ROOT/build-tools/35.0.0/lib64/libc++.so" relay_tools/lib64/libc++.so; fi
+          ldd "$ANDROID_SDK_ROOT/build-tools/35.0.0/zipalign" || true
           chmod +x relay_tools/zipalign relay_tools/apksigner
-          sha256sum relay_tools/zipalign relay_tools/apksigner relay_tools/lib/apksigner.jar
+          find relay_tools -type f -maxdepth 3 -print -exec sha256sum {} \;
       - name: Upload official Android signing tools
         uses: actions/upload-artifact@v4
         with:
-          name: android-build-tools-35-signing
+          name: android-build-tools-35-signing-with-libcxx
           path: relay_tools
           compression-level: 0
           retention-days: 1
