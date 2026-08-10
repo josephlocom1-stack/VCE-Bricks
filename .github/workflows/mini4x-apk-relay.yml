@@ -1,6 +1,6 @@
-name: Mini4X APK chunk relay
+name: Mini4X APK public artifact relay
 permissions:
-  contents: write
+  contents: read
 on:
   push:
     branches: [mini4x-apk-relay]
@@ -10,18 +10,16 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Split verified APK into text-safe chunks
+      - name: Verify compiled APK
         run: |
           set -euxo pipefail
           APK=relay/Mini4X-v1.1-skeleton.apk
           echo '6b5e5d7549bf9ed2ecf62e04dfadd18f4de2d2478fdbb0e2b6cd5bfcf1982e71  relay/Mini4X-v1.1-skeleton.apk' | sha256sum -c -
-          rm -rf relay_chunks
-          mkdir -p relay_chunks
-          base64 -w0 "$APK" | split -b 40000 -d -a 2 - relay_chunks/apk.b64.
-          printf '%s\n' '6b5e5d7549bf9ed2ecf62e04dfadd18f4de2d2478fdbb0e2b6cd5bfcf1982e71' > relay_chunks/APK_SHA256.txt
-          ls -lh relay_chunks
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add relay_chunks
-          git commit -m 'Split Mini4X APK for local reconstruction [skip ci]' || true
-          git push origin HEAD:mini4x-apk-relay
+          unzip -t "$APK"
+      - name: Upload APK relay artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mini4X-v1.1-skeleton-public-relay
+          path: relay/Mini4X-v1.1-skeleton.apk
+          compression-level: 0
+          retention-days: 1
