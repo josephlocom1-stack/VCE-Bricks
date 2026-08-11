@@ -19,14 +19,15 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      - name: Install Android build tools and APKTool
+      - name: Install Android build tools and current official Apktool
         shell: bash
         run: |
           set -euo pipefail
           sdkmanager "build-tools;35.0.0" "platforms;android-35"
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq apktool
-          apktool --version
+          APKTOOL_URL="$(curl -fsSL https://api.github.com/repos/iBotPeaches/Apktool/releases/latest | python -c 'import json,sys; d=json.load(sys.stdin); print(next(a["browser_download_url"] for a in d["assets"] if a["name"].endswith(".jar")))')"
+          echo "Using $APKTOOL_URL"
+          curl -fsSL -L "$APKTOOL_URL" -o /tmp/apktool.jar
+          java -jar /tmp/apktool.jar --version
 
       - name: Verify exact original APK
         shell: bash
@@ -38,22 +39,18 @@ jobs:
           unzip -t "$APK"
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging "$APK" | tee /tmp/original-badging.txt
-          for f in cities fog tech tiles units; do
-            unzip -p "$APK" "assets/mini4x/atlases/$f.webp" > "/tmp/$f.webp"
-          done
-          echo 'ac5d80cd9f05e0b9687b5852c53d3bbd584115dd1773a0687ab52ae6fd73e925  /tmp/cities.webp' > /tmp/ATLAS_SHA256SUMS
-          echo '1cef784fb3dc52d432105b60ab17da1f3a7fa22e9459b1468e9cb2af254df94b  /tmp/fog.webp' >> /tmp/ATLAS_SHA256SUMS
-          echo '132a901174d17182f56c304e8c33744331df451e702f858454429ebab8da6b3f  /tmp/tech.webp' >> /tmp/ATLAS_SHA256SUMS
-          echo '89e16667d0df1a6a8a19a687a01d2109a9181a6681a98614aee00d0b5f3e6743  /tmp/tiles.webp' >> /tmp/ATLAS_SHA256SUMS
-          echo '7ec984977f1730576a3669204fd1aee705a47a4887c4f5a980762fd54c438116  /tmp/units.webp' >> /tmp/ATLAS_SHA256SUMS
-          sha256sum -c /tmp/ATLAS_SHA256SUMS
+          for f in cities fog tech tiles units; do unzip -p "$APK" "assets/mini4x/atlases/$f.webp" > "/tmp/$f.webp"; done
+          test "$(sha256sum /tmp/cities.webp | awk '{print $1}')" = 'ac5d80cd9f05e0b9687b5852c53d3bbd584115dd1773a0687ab52ae6fd73e925'
+          test "$(sha256sum /tmp/fog.webp | awk '{print $1}')" = '1cef784fb3dc52d432105b60ab17da1f3a7fa22e9459b1468e9cb2af254df94b'
+          test "$(sha256sum /tmp/tech.webp | awk '{print $1}')" = '132a901174d17182f56c304e8c33744331df451e702f858454429ebab8da6b3f'
+          test "$(sha256sum /tmp/tiles.webp | awk '{print $1}')" = '89e16667d0df1a6a8a19a687a01d2109a9181a6681a98614aee00d0b5f3e6743'
+          test "$(sha256sum /tmp/units.webp | awk '{print $1}')" = '7ec984977f1730576a3669204fd1aee705a47a4887c4f5a980762fd54c438116'
 
       - name: Decode and patch only test target SDK
         shell: bash
         run: |
           set -euo pipefail
-          apktool d -f temporary-mini4x-relay/Mini4X-v1.1-final-test.apk -o decoded
-          echo '--- decoded apktool.yml sdkInfo ---'
+          java -jar /tmp/apktool.jar d -f temporary-mini4x-relay/Mini4X-v1.1-final-test.apk -o decoded
           grep -A8 -n '^sdkInfo:' decoded/apktool.yml || true
           python - <<'PY'
           from pathlib import Path
@@ -61,14 +58,8 @@ jobs:
           p = Path('decoded/apktool.yml')
           s = p.read_text()
           n, count = re.subn(r'(?m)^(\s*targetSdkVersion:\s*["\x27]?)35(["\x27]?\s*)$', r'\g<1>29\2', s)
-          if count == 0:
-              m = re.search(r'(?m)^sdkInfo:\s*$', s)
-              assert m, 'sdkInfo not found in apktool.yml'
-              insert_at = m.end()
-              n = s[:insert_at] + "\n  targetSdkVersion: '29'" + s[insert_at:]
-              count = 1
+          assert count == 1, ('targetSdkVersion 35 patch count', count)
           p.write_text(n)
-          print('patched targetSdkVersion occurrences:', count)
           PY
           grep -A8 -n '^sdkInfo:' decoded/apktool.yml || true
 
@@ -76,7 +67,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          apktool b decoded -o /tmp/Mini4X-v1.1-drive-unsigned.apk
+          java -jar /tmp/apktool.jar b decoded -o /tmp/Mini4X-v1.1-drive-unsigned.apk
           keytool -genkeypair -keystore /tmp/mini4x-drive.keystore \
             -storepass android -keypass android -alias androiddebugkey \
             -dname 'CN=Mini4X Test,O=Mini4X,C=AU' \
@@ -93,10 +84,7 @@ jobs:
           grep -q "targetSdkVersion:'29'" /tmp/badging.txt
           rm -rf /tmp/rebuilt-atlases
           mkdir -p /tmp/rebuilt-atlases
-          for f in cities fog tech tiles units; do
-            unzip -p /tmp/Mini4X-v1.1-drive-signed.apk "assets/mini4x/atlases/$f.webp" > "/tmp/rebuilt-atlases/$f.webp"
-          done
-          sha256sum /tmp/rebuilt-atlases/*.webp
+          for f in cities fog tech tiles units; do unzip -p /tmp/Mini4X-v1.1-drive-signed.apk "assets/mini4x/atlases/$f.webp" > "/tmp/rebuilt-atlases/$f.webp"; done
           test "$(sha256sum /tmp/rebuilt-atlases/cities.webp | awk '{print $1}')" = 'ac5d80cd9f05e0b9687b5852c53d3bbd584115dd1773a0687ab52ae6fd73e925'
           test "$(sha256sum /tmp/rebuilt-atlases/fog.webp | awk '{print $1}')" = '1cef784fb3dc52d432105b60ab17da1f3a7fa22e9459b1468e9cb2af254df94b'
           test "$(sha256sum /tmp/rebuilt-atlases/tech.webp | awk '{print $1}')" = '132a901174d17182f56c304e8c33744331df451e702f858454429ebab8da6b3f'
@@ -137,9 +125,7 @@ jobs:
           grep -q "targetSdkVersion:'29'" /tmp/postpack-badging.txt
           rm -rf /tmp/post-atlases
           mkdir -p /tmp/post-atlases
-          for f in cities fog tech tiles units; do
-            unzip -p /tmp/Mini4X-v1.1-drive-ready.apk "assets/mini4x/atlases/$f.webp" > "/tmp/post-atlases/$f.webp"
-          done
+          for f in cities fog tech tiles units; do unzip -p /tmp/Mini4X-v1.1-drive-ready.apk "assets/mini4x/atlases/$f.webp" > "/tmp/post-atlases/$f.webp"; done
           test "$(sha256sum /tmp/post-atlases/cities.webp | awk '{print $1}')" = 'ac5d80cd9f05e0b9687b5852c53d3bbd584115dd1773a0687ab52ae6fd73e925'
           test "$(sha256sum /tmp/post-atlases/fog.webp | awk '{print $1}')" = '1cef784fb3dc52d432105b60ab17da1f3a7fa22e9459b1468e9cb2af254df94b'
           test "$(sha256sum /tmp/post-atlases/tech.webp | awk '{print $1}')" = '132a901174d17182f56c304e8c33744331df451e702f858454429ebab8da6b3f'
