@@ -37,29 +37,40 @@ jobs:
           test "$(sha256sum "$APK" | awk '{print $1}')" = "$EXPECTED"
           unzip -t "$APK"
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging "$APK" | tee /tmp/original-badging.txt
           for f in cities fog tech tiles units; do
-            unzip -l "$APK" "assets/mini4x/atlases/$f.webp" | grep "assets/mini4x/atlases/$f.webp"
+            unzip -p "$APK" "assets/mini4x/atlases/$f.webp" > "/tmp/$f.webp"
           done
+          echo 'ac5d80cd9f05e0b9687b5852c53d3bbd584115dd1773a0687ab52ae6fd73e925  /tmp/cities.webp' > /tmp/ATLAS_SHA256SUMS
+          echo '1cef784fb3dc52d432105b60ab17da1f3a7fa22e9459b1468e9cb2af254df94b  /tmp/fog.webp' >> /tmp/ATLAS_SHA256SUMS
+          echo '132a901174d17182f56c304e8c33744331df451e702f858454429ebab8da6b3f  /tmp/tech.webp' >> /tmp/ATLAS_SHA256SUMS
+          echo '89e16667d0df1a6a8a19a687a01d2109a9181a6681a98614aee00d0b5f3e6743  /tmp/tiles.webp' >> /tmp/ATLAS_SHA256SUMS
+          echo '7ec984977f1730576a3669204fd1aee705a47a4887c4f5a980762fd54c438116  /tmp/units.webp' >> /tmp/ATLAS_SHA256SUMS
+          sha256sum -c /tmp/ATLAS_SHA256SUMS
 
       - name: Decode and patch only test target SDK
         shell: bash
         run: |
           set -euo pipefail
           apktool d -f temporary-mini4x-relay/Mini4X-v1.1-final-test.apk -o decoded
-          grep -n 'uses-sdk\|targetSdk' decoded/AndroidManifest.xml || true
+          echo '--- decoded apktool.yml sdkInfo ---'
+          grep -A8 -n '^sdkInfo:' decoded/apktool.yml || true
           python - <<'PY'
           from pathlib import Path
           import re
-          p=Path('decoded/AndroidManifest.xml')
-          s=p.read_text()
-          n,c=re.subn(r'android:targetSdkVersion="35"', 'android:targetSdkVersion="29"', s)
-          if c == 0:
-              n,c=re.subn(r'targetSdkVersion="35"', 'targetSdkVersion="29"', s)
-          assert c > 0, 'targetSdkVersion 35 not found in decoded manifest'
+          p = Path('decoded/apktool.yml')
+          s = p.read_text()
+          n, count = re.subn(r'(?m)^(\s*targetSdkVersion:\s*["\x27]?)35(["\x27]?\s*)$', r'\g<1>29\2', s)
+          if count == 0:
+              m = re.search(r'(?m)^sdkInfo:\s*$', s)
+              assert m, 'sdkInfo not found in apktool.yml'
+              insert_at = m.end()
+              n = s[:insert_at] + "\n  targetSdkVersion: '29'" + s[insert_at:]
+              count = 1
           p.write_text(n)
-          print('patched targetSdkVersion occurrences:', c)
+          print('patched targetSdkVersion occurrences:', count)
           PY
-          grep -n 'uses-sdk\|targetSdk' decoded/AndroidManifest.xml || true
+          grep -A8 -n '^sdkInfo:' decoded/apktool.yml || true
 
       - name: Rebuild and JAR-sign Drive-safe APK
         shell: bash
@@ -80,9 +91,17 @@ jobs:
           grep -q 'Verified using v1 scheme (JAR signing): true' /tmp/prepack-signature.txt
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging /tmp/Mini4X-v1.1-drive-signed.apk | tee /tmp/badging.txt
           grep -q "targetSdkVersion:'29'" /tmp/badging.txt
+          rm -rf /tmp/rebuilt-atlases
+          mkdir -p /tmp/rebuilt-atlases
           for f in cities fog tech tiles units; do
-            unzip -l /tmp/Mini4X-v1.1-drive-signed.apk "assets/mini4x/atlases/$f.webp" | grep "assets/mini4x/atlases/$f.webp"
+            unzip -p /tmp/Mini4X-v1.1-drive-signed.apk "assets/mini4x/atlases/$f.webp" > "/tmp/rebuilt-atlases/$f.webp"
           done
+          sha256sum /tmp/rebuilt-atlases/*.webp
+          test "$(sha256sum /tmp/rebuilt-atlases/cities.webp | awk '{print $1}')" = 'ac5d80cd9f05e0b9687b5852c53d3bbd584115dd1773a0687ab52ae6fd73e925'
+          test "$(sha256sum /tmp/rebuilt-atlases/fog.webp | awk '{print $1}')" = '1cef784fb3dc52d432105b60ab17da1f3a7fa22e9459b1468e9cb2af254df94b'
+          test "$(sha256sum /tmp/rebuilt-atlases/tech.webp | awk '{print $1}')" = '132a901174d17182f56c304e8c33744331df451e702f858454429ebab8da6b3f'
+          test "$(sha256sum /tmp/rebuilt-atlases/tiles.webp | awk '{print $1}')" = '89e16667d0df1a6a8a19a687a01d2109a9181a6681a98614aee00d0b5f3e6743'
+          test "$(sha256sum /tmp/rebuilt-atlases/units.webp | awk '{print $1}')" = '7ec984977f1730576a3669204fd1aee705a47a4887c4f5a980762fd54c438116'
           rm -rf apkroot
           mkdir apkroot
           unzip -q /tmp/Mini4X-v1.1-drive-signed.apk -d apkroot
@@ -116,9 +135,16 @@ jobs:
           grep -q 'Verified using v1 scheme (JAR signing): true' /tmp/postpack-signature.txt
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging /tmp/Mini4X-v1.1-drive-ready.apk | tee /tmp/postpack-badging.txt
           grep -q "targetSdkVersion:'29'" /tmp/postpack-badging.txt
+          rm -rf /tmp/post-atlases
+          mkdir -p /tmp/post-atlases
           for f in cities fog tech tiles units; do
-            unzip -l /tmp/Mini4X-v1.1-drive-ready.apk "assets/mini4x/atlases/$f.webp" | grep "assets/mini4x/atlases/$f.webp"
+            unzip -p /tmp/Mini4X-v1.1-drive-ready.apk "assets/mini4x/atlases/$f.webp" > "/tmp/post-atlases/$f.webp"
           done
+          test "$(sha256sum /tmp/post-atlases/cities.webp | awk '{print $1}')" = 'ac5d80cd9f05e0b9687b5852c53d3bbd584115dd1773a0687ab52ae6fd73e925'
+          test "$(sha256sum /tmp/post-atlases/fog.webp | awk '{print $1}')" = '1cef784fb3dc52d432105b60ab17da1f3a7fa22e9459b1468e9cb2af254df94b'
+          test "$(sha256sum /tmp/post-atlases/tech.webp | awk '{print $1}')" = '132a901174d17182f56c304e8c33744331df451e702f858454429ebab8da6b3f'
+          test "$(sha256sum /tmp/post-atlases/tiles.webp | awk '{print $1}')" = '89e16667d0df1a6a8a19a687a01d2109a9181a6681a98614aee00d0b5f3e6743'
+          test "$(sha256sum /tmp/post-atlases/units.webp | awk '{print $1}')" = '7ec984977f1730576a3669204fd1aee705a47a4887c4f5a980762fd54c438116'
           echo "ARTIFACT_ID=$ID"
           stat -c 'APK_SIZE=%s' /tmp/Mini4X-v1.1-drive-ready.apk
           sha256sum /tmp/Mini4X-v1.1-drive-ready.apk
