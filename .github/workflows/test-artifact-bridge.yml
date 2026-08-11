@@ -1,0 +1,18 @@
+name: Test Artifact Bridge
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/test-artifact-bridge.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Mini4X bridge test' > bridge-test.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mini4x-bridge-test
+          path: bridge-test.txt
+          retention-days: 1
