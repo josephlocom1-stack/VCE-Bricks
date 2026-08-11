@@ -1,0 +1,124 @@
+name: Build Drive-ready Mini4X APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mini4x-drive-ready-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android build tools and APKTool
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager "build-tools;35.0.0" "platforms;android-35"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq apktool
+          apktool --version
+
+      - name: Verify exact original APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=temporary-mini4x-relay/Mini4X-v1.1-final-test.apk
+          EXPECTED='031a5be4908e1521fa6ee12f91b942c281128bbea50cac0e75057a2e58735e64'
+          test "$(sha256sum "$APK" | awk '{print $1}')" = "$EXPECTED"
+          unzip -t "$APK"
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          for f in cities fog tech tiles units; do
+            unzip -l "$APK" "assets/mini4x/atlases/$f.webp" | grep "assets/mini4x/atlases/$f.webp"
+          done
+
+      - name: Decode and patch only test target SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          apktool d -f temporary-mini4x-relay/Mini4X-v1.1-final-test.apk -o decoded
+          grep -n 'uses-sdk\|targetSdk' decoded/AndroidManifest.xml || true
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('decoded/AndroidManifest.xml')
+          s=p.read_text()
+          n,c=re.subn(r'android:targetSdkVersion="35"', 'android:targetSdkVersion="29"', s)
+          if c == 0:
+              n,c=re.subn(r'targetSdkVersion="35"', 'targetSdkVersion="29"', s)
+          assert c > 0, 'targetSdkVersion 35 not found in decoded manifest'
+          p.write_text(n)
+          print('patched targetSdkVersion occurrences:', c)
+          PY
+          grep -n 'uses-sdk\|targetSdk' decoded/AndroidManifest.xml || true
+
+      - name: Rebuild and JAR-sign Drive-safe APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          apktool b decoded -o /tmp/Mini4X-v1.1-drive-unsigned.apk
+          keytool -genkeypair -keystore /tmp/mini4x-drive.keystore \
+            -storepass android -keypass android -alias androiddebugkey \
+            -dname 'CN=Mini4X Test,O=Mini4X,C=AU' \
+            -keyalg RSA -keysize 2048 -validity 10000 -noprompt
+          jarsigner -keystore /tmp/mini4x-drive.keystore \
+            -storepass android -keypass android \
+            -sigalg SHA256withRSA -digestalg SHA-256 \
+            /tmp/Mini4X-v1.1-drive-unsigned.apk androiddebugkey
+          mv /tmp/Mini4X-v1.1-drive-unsigned.apk /tmp/Mini4X-v1.1-drive-signed.apk
+          jarsigner -verify /tmp/Mini4X-v1.1-drive-signed.apk
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --verbose --print-certs /tmp/Mini4X-v1.1-drive-signed.apk | tee /tmp/prepack-signature.txt
+          grep -q 'Verified using v1 scheme (JAR signing): true' /tmp/prepack-signature.txt
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging /tmp/Mini4X-v1.1-drive-signed.apk | tee /tmp/badging.txt
+          grep -q "targetSdkVersion:'29'" /tmp/badging.txt
+          for f in cities fog tech tiles units; do
+            unzip -l /tmp/Mini4X-v1.1-drive-signed.apk "assets/mini4x/atlases/$f.webp" | grep "assets/mini4x/atlases/$f.webp"
+          done
+          rm -rf apkroot
+          mkdir apkroot
+          unzip -q /tmp/Mini4X-v1.1-drive-signed.apk -d apkroot
+
+      - name: Upload APK root as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mini4X-v1.1-drive-ready-apk
+          path: apkroot/
+          compression-level: 6
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Verify downloaded artifact is itself a valid APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ID=''
+          for i in {1..15}; do
+            ID="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq '.artifacts[] | select(.name=="Mini4X-v1.1-drive-ready-apk") | .id' | head -1)"
+            [ -n "$ID" ] && break
+            sleep 2
+          done
+          test -n "$ID"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ID/zip" > /tmp/Mini4X-v1.1-drive-ready.apk
+          unzip -t /tmp/Mini4X-v1.1-drive-ready.apk
+          jarsigner -verify /tmp/Mini4X-v1.1-drive-ready.apk
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --verbose --print-certs /tmp/Mini4X-v1.1-drive-ready.apk | tee /tmp/postpack-signature.txt
+          grep -q 'Verified using v1 scheme (JAR signing): true' /tmp/postpack-signature.txt
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging /tmp/Mini4X-v1.1-drive-ready.apk | tee /tmp/postpack-badging.txt
+          grep -q "targetSdkVersion:'29'" /tmp/postpack-badging.txt
+          for f in cities fog tech tiles units; do
+            unzip -l /tmp/Mini4X-v1.1-drive-ready.apk "assets/mini4x/atlases/$f.webp" | grep "assets/mini4x/atlases/$f.webp"
+          done
+          echo "ARTIFACT_ID=$ID"
+          stat -c 'APK_SIZE=%s' /tmp/Mini4X-v1.1-drive-ready.apk
+          sha256sum /tmp/Mini4X-v1.1-drive-ready.apk
