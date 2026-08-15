@@ -1,0 +1,30 @@
+name: Temporary Mini4X QA Screenshot Relay
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temp-mini4x-qa-relay.yml']
+permissions:
+  contents: write
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Fetch temporary QA contact sheet
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p temp-mini4x-qa
+          curl --connect-timeout 10 --max-time 60 --fail -sS https://paste.rs/nN9Xu -o temp-mini4x-qa/contact.jpg
+          file temp-mini4x-qa/contact.jpg
+          test -s temp-mini4x-qa/contact.jpg
+      - name: Commit temporary relay image
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add temp-mini4x-qa/contact.jpg
+          git commit -m 'Temporary Mini4X QA contact sheet'
+          git push origin HEAD:main
