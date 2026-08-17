@@ -23,10 +23,13 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
 
-      - name: Assemble exact locked APK and environment-hardened QA harness
+      - name: Verify Intel runner and assemble exact locked APK harness
         shell: bash
         run: |
           set -euo pipefail
+          host_arch="$(uname -m)"
+          test "$host_arch" = x86_64
+          echo "host_arch=$host_arch"
           tar -xzf relay/qa-harness/mini4x-qa-harness.tar.gz
           mkdir -p project/app/build/outputs/apk/debug
           cp source-evidence/Mini4X-v1.4-semantic-qa.apk project/app/build/outputs/apk/debug/app-debug.apk
