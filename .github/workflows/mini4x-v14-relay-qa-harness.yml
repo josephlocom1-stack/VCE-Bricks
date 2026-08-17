@@ -1,0 +1,27 @@
+name: Temporary Mini4X QA Harness Relay
+on:
+  push:
+    branches: [mini4x-public-qa-temp]
+    paths: ['.github/workflows/mini4x-v14-relay-qa-harness.yml']
+permissions:
+  contents: read
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Capture semantic QA harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          fetch(){ mkdir -p "$(dirname "$1")"; curl --connect-timeout 10 --max-time 30 -fsSL "$2" -o "$1"; test -s "$1"; }
+          fetch qa/inject_emulator_scenarios.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/qa/inject_emulator_scenarios.py?token=BXN2EFJOEVQBRIYYK74E2JLKQL4PTAA'
+          fetch qa/mini4x_emulator_flow.sh 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/qa/mini4x_emulator_flow.sh?token=BXN2EFMWQAVN4EBNFFA4YF3KQL4PTAA'
+          fetch qa/build_visual_evidence.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/qa/build_visual_evidence.py?token=BXN2EFOXZZNMQDC244VDSSTKQL4PTAA'
+          tar -czf mini4x-qa-harness.tar.gz qa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mini4x-qa-harness
+          path: mini4x-qa-harness.tar.gz
+          retention-days: 1
+          if-no-files-found: error
