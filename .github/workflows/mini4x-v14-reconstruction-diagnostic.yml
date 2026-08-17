@@ -1,0 +1,101 @@
+name: Temporary Mini4X V1.4 Reconstruction Diagnostic
+
+on:
+  push:
+    branches: [mini4x-public-qa-temp]
+    paths: ['.github/workflows/mini4x-v14-reconstruction-diagnostic.yml']
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Download relayed inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          print('relay_downloads_begin')
+          PY
+      - uses: actions/download-artifact@v4
+        with: {name: mini4x-buildsrc, path: relay/buildsrc, github-token: '${{ github.token }}', repository: josephlocom1-stack/VCE-Bricks, run-id: '32027530759'}
+      - uses: actions/download-artifact@v4
+        with: {name: mini4x-generator, path: relay/generator, github-token: '${{ github.token }}', repository: josephlocom1-stack/VCE-Bricks, run-id: '32027780110'}
+      - uses: actions/download-artifact@v4
+        with: {name: mini4x-v12, path: relay/v12, github-token: '${{ github.token }}', repository: josephlocom1-stack/VCE-Bricks, run-id: '32027823008'}
+      - uses: actions/download-artifact@v4
+        with: {name: mini4x-v13-ai, path: relay/v13-ai, github-token: '${{ github.token }}', repository: josephlocom1-stack/VCE-Bricks, run-id: '32027879200'}
+      - uses: actions/download-artifact@v4
+        with: {name: mini4x-v13-qa, path: relay/v13-qa, github-token: '${{ github.token }}', repository: josephlocom1-stack/VCE-Bricks, run-id: '32027906449'}
+      - uses: actions/download-artifact@v4
+        with: {name: mini4x-v14-scripts, path: relay/v14-scripts, github-token: '${{ github.token }}', repository: josephlocom1-stack/VCE-Bricks, run-id: '32027949459'}
+      - uses: actions/download-artifact@v4
+        with: {name: mini4x-v14-assets, path: relay/v14-assets, github-token: '${{ github.token }}', repository: josephlocom1-stack/VCE-Bricks, run-id: '32027974246'}
+      - uses: actions/download-artifact@v4
+        with: {name: mini4x-qa-harness, path: relay/qa-harness, github-token: '${{ github.token }}', repository: josephlocom1-stack/VCE-Bricks, run-id: '32028004472'}
+
+      - name: Reconstruct and trace exact failure
+        id: diagnostic
+        shell: bash
+        run: |
+          set +e
+          : > reconstruction-diagnostic.txt
+          log(){ printf '%s\n' "$*" | tee -a reconstruction-diagnostic.txt; }
+          fail(){ rc="$1"; shift; log "FAIL rc=$rc :: $*"; exit "$rc"; }
+          run(){ label="$1"; shift; log "BEGIN $label"; "$@" >>reconstruction-diagnostic.txt 2>&1; rc=$?; log "END $label rc=$rc"; [ "$rc" -eq 0 ] || fail "$rc" "$label"; }
+
+          for f in relay/*/*.tar.gz; do run "extract $f" tar -xzf "$f"; done
+          run pip python -m pip install --disable-pip-version-check --quiet pillow numpy
+          run decode bash -c 'cat buildsrc/noassets.00.b64 buildsrc/noassets.01.b64 buildsrc/noassets.02.b64 buildsrc/noassets.03.b64 buildsrc/noassets.04a.b64 buildsrc/noassets.04b.b64 buildsrc/noassets.05.b64 buildsrc/noassets.06.b64 buildsrc/noassets.07.b64 buildsrc/noassets.08a.b64 buildsrc/noassets.08b.b64 buildsrc/noassets.09.b64 | base64 -d >/tmp/src.zip && unzip -t /tmp/src.zip >/dev/null && rm -rf project && mkdir project && unzip -q /tmp/src.zip -d project'
+          run generator bash -c 'cat final-generator/generator.*.part >/tmp/generate.py && mkdir -p project/app/src/main/assets/mini4x/atlases && python /tmp/generate.py project/app/src/main/assets/mini4x/atlases'
+          run v12 env MINI4X_PROJECT=project python v12-patch/apply_v12.py
+          run v13_ai env MINI4X_PROJECT=project python v13-ai/apply_v13_ai.py
+          run v13_qa env MINI4X_PROJECT=project python v13-qa/apply_v13_qa.py
+          run v14_roster env MINI4X_PROJECT=project python v14-ai/apply_v14_full_roster_ai.py
+          run v14_quality env MINI4X_PROJECT=project python v14-ai/apply_v14_ai_quality.py
+          run v14_play_ready env MINI4X_PROJECT=project python v14-ai/apply_v14_play_ready.py
+          run directional env MINI4X_PROJECT=project python v13-qa/apply_directional_facing.py
+          run ui_review env MINI4X_PROJECT=project python v13-qa/apply_v13_ui_review_fixes.py
+          run action_review env MINI4X_PROJECT=project python v13-qa/apply_v13_action_review_fixes.py
+          run diplomacy env MINI4X_PROJECT=project python v14-ai/apply_v14_diplomacy_ui.py
+          run tile_actions env MINI4X_PROJECT=project python v14-ai/apply_v14_tile_actions_ui.py
+          run result_lifecycle env MINI4X_PROJECT=project python v14-ai/apply_v14_result_lifecycle.py
+          run command_reachability env MINI4X_PROJECT=project python v14-ai/apply_v14_command_reachability.py
+          run game_flow env MINI4X_PROJECT=project python v14-ai/apply_v14_game_flow_lifecycle.py
+          run selection env MINI4X_PROJECT=project python v14-ai/apply_v14_selection_lifecycle.py
+          run safe_new env MINI4X_PROJECT=project python v14-ai/apply_v14_safe_new_game.py
+          run qa_inject env MINI4X_PROJECT=project python qa/inject_emulator_scenarios.py
+
+          run assertions bash -c '
+            grep -q '\''versionName = "1.4.0"'\'' project/app/build.gradle.kts &&
+            grep -q '\''versionCode = 15'\'' project/app/build.gradle.kts &&
+            grep -q '\''compileSdk = 36'\'' project/app/build.gradle.kts &&
+            grep -q '\''targetSdk = 36'\'' project/app/build.gradle.kts &&
+            grep -q '\''8.10.1'\'' project/build.gradle.kts &&
+            grep -q '\''Never break peace while our units are still inside'\'' project/app/src/main/java/com/example/mini4x/ai/StrategicAi.kt &&
+            grep -q '\''criticalThreat'\'' project/app/src/main/java/com/example/mini4x/ai/StrategicAi.kt &&
+            grep -q '\''ScreenMode.DIPLOMACY'\'' project/app/src/main/java/com/example/mini4x/presentation/GamePresenter.kt &&
+            grep -q '\''private fun drawDiplomacy'\'' project/app/src/main/java/com/example/mini4x/ui/Mini4xView.kt &&
+            grep -q '\''private fun tileContextLabel'\'' project/app/src/main/java/com/example/mini4x/ui/Mini4xView.kt &&
+            grep -q '\''private fun reconcileSelectionAfterCommand'\'' project/app/src/main/java/com/example/mini4x/presentation/GamePresenter.kt &&
+            grep -q '\''preserve current save until START GAME'\'' project/app/src/main/java/com/example/mini4x/ui/Mini4xView.kt &&
+            test -s project/app/src/main/assets/mini4x/v14_full_roster_ai_manifest.json &&
+            test -s project/app/src/main/assets/mini4x/v14_naval_ai_master.webp &&
+            test -s project/app/src/main/assets/mini4x/v14_raft_styleA_locked.png'
+          log reconstruction_diagnostic=PASS
+
+      - name: Preserve diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mini4x-reconstruction-diagnostic
+          path: reconstruction-diagnostic.txt
+          retention-days: 1
+          if-no-files-found: error
