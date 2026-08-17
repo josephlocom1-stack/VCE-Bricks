@@ -43,6 +43,8 @@ jobs:
           grep -q 'android.intent.action.CLOSE_SYSTEM_DIALOGS' qa/mini4x_emulator_flow.sh
           grep -q 'wait_input_ready(){' qa/mini4x_emulator_flow.sh
           grep -q 'adb shell input tap 12 12' qa/mini4x_emulator_flow.sh
+          grep -q 'timeout 90s adb shell am start -W' qa/mini4x_emulator_flow.sh
+          grep -q 'ACTIVITY_LAUNCH_OK' qa/mini4x_emulator_flow.sh
           grep -q 'wait_input_ready "$scenario_screen"' qa/mini4x_emulator_flow.sh
           grep -q 'wait_input_ready TITLE' qa/mini4x_emulator_flow.sh
           grep -q 'tap_expect TITLE 540 1416' qa/mini4x_emulator_flow.sh
@@ -86,7 +88,7 @@ jobs:
           source_build_artifact=9289338969
           source_apk_sha256=3b821eb191165b5398fe7c3f5d8fc1f8d81bd66c87ffa4dc9debabff33047217
           qa_harness_relay_run=32028004472
-          harness_fix=system_dialog_guard_plus_real_input_readiness
+          harness_fix=system_dialog_guard_plus_activity_launch_wait_plus_real_input_readiness
           product_candidate_changed=false
           EOF
           printf 'public_runner_repo=%s\npublic_runner_run=%s\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> public-evidence/PROVENANCE.txt
