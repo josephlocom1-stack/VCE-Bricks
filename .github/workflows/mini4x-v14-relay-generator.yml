@@ -1,0 +1,28 @@
+name: Temporary Mini4X Generator Relay
+on:
+  push:
+    branches: [mini4x-public-qa-temp]
+    paths: ['.github/workflows/mini4x-v14-relay-generator.yml']
+permissions:
+  contents: read
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Capture generator inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          fetch(){ mkdir -p "$(dirname "$1")"; curl --connect-timeout 10 --max-time 30 -fsSL "$2" -o "$1"; test -s "$1"; }
+          fetch final-generator/generator.00.part 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/final-generator/generator.00.part?token=BXN2EFILOUKIZDJ5SIHZEQDKQL4FJAA'
+          fetch final-generator/generator.01.part 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/final-generator/generator.01.part?token=BXN2EFIC2D5FR75J72O3MPDKQL4FJAA'
+          fetch final-generator/generator.02.part 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/final-generator/generator.02.part?token=BXN2EFPF4MZKGVS6UNOXYDDKQL4FJAA'
+          fetch final-generator/generator.03.part 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/final-generator/generator.03.part?token=BXN2EFPGFQHHGYGVVO6IIQLKQL4FJAA'
+          tar -czf mini4x-generator.tar.gz final-generator
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mini4x-generator
+          path: mini4x-generator.tar.gz
+          retention-days: 1
+          if-no-files-found: error
