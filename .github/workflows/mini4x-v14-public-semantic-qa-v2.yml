@@ -1,4 +1,4 @@
-name: Mini4X V1.4 Emulator-Only Dialog Guard Retry
+name: Mini4X V1.4 Emulator-Only Input-Ready Retry
 
 on:
   workflow_dispatch:
@@ -37,33 +37,18 @@ jobs:
           expected=3b821eb191165b5398fe7c3f5d8fc1f8d81bd66c87ffa4dc9debabff33047217
           test "$actual" = "$expected"
           printf '%s  %s\n' "$actual" project/app/build/outputs/apk/debug/app-debug.apk > qa_apk_sha256.txt
-          python - <<'PY'
-          from pathlib import Path
-          p=Path('qa/mini4x_emulator_flow.sh')
-          src=p.read_text()
-          locked='tap_expect TITLE 540 1416'
-          assert locked in src, 'locked-candidate Result -> TITLE contract missing'
-          assert 'tap_expect SETUP 540 1416' not in src, 'completion-overlay SETUP contract leaked into locked-candidate harness'
-          old='''if [ "$boot" != "1" ]; then mark "FAIL device_not_booted value=$boot"; exit 1; fi
-          adb20 shell wm size 1080x2400'''
-          new='''if [ "$boot" != "1" ]; then mark "FAIL device_not_booted value=$boot"; exit 1; fi
-          adb20 shell settings put global hide_error_dialogs 1
-          dialog_guard="$(adb20 shell settings get global hide_error_dialogs | tr -d '\\r')"
-          if [ "$dialog_guard" != "1" ]; then mark "FAIL system_dialog_guard value=$dialog_guard"; exit 1; fi
-          adb20 shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
-          sleep .5
-          mark "SYSTEM_DIALOG_GUARD_OK hide_error_dialogs=$dialog_guard"
-          adb20 shell wm size 1080x2400'''
-          assert src.count(old)==1, 'system-dialog guard anchor drifted'
-          p.write_text(src.replace(old,new,1))
-          PY
+          python qa/patch_mini4x_public_harness.py qa/mini4x_emulator_flow.sh
           bash -n qa/mini4x_emulator_flow.sh
           grep -q 'settings put global hide_error_dialogs 1' qa/mini4x_emulator_flow.sh
           grep -q 'android.intent.action.CLOSE_SYSTEM_DIALOGS' qa/mini4x_emulator_flow.sh
+          grep -q 'wait_input_ready(){' qa/mini4x_emulator_flow.sh
+          grep -q 'adb shell input tap 12 12' qa/mini4x_emulator_flow.sh
+          grep -q 'wait_input_ready "$scenario_screen"' qa/mini4x_emulator_flow.sh
+          grep -q 'wait_input_ready TITLE' qa/mini4x_emulator_flow.sh
           grep -q 'tap_expect TITLE 540 1416' qa/mini4x_emulator_flow.sh
           ! grep -q 'tap_expect SETUP 540 1416' qa/mini4x_emulator_flow.sh
           python -m pip install --disable-pip-version-check --quiet pillow
-          echo exact_locked_apk_and_dialog_guard=PASS
+          echo exact_locked_apk_harness=PASS
 
       - name: Enable portable GNU command bounds
         shell: bash
@@ -101,7 +86,7 @@ jobs:
           source_build_artifact=9289338969
           source_apk_sha256=3b821eb191165b5398fe7c3f5d8fc1f8d81bd66c87ffa4dc9debabff33047217
           qa_harness_relay_run=32028004472
-          harness_fix=hide_error_dialogs_plus_CLOSE_SYSTEM_DIALOGS_only
+          harness_fix=system_dialog_guard_plus_real_input_readiness
           product_candidate_changed=false
           EOF
           printf 'public_runner_repo=%s\npublic_runner_run=%s\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> public-evidence/PROVENANCE.txt
@@ -110,7 +95,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Mini4X-v1.4-dialog-guard-semantic-evidence
+          name: Mini4X-v1.4-input-ready-semantic-evidence
           path: public-evidence/
           retention-days: 1
           if-no-files-found: error
