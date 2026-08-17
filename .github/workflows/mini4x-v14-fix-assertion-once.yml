@@ -1,0 +1,33 @@
+name: Temporary Mini4X Assertion Fix
+on:
+  push:
+    branches: [mini4x-public-qa-temp]
+    paths: ['.github/workflows/mini4x-v14-fix-assertion-once.yml']
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: mini4x-public-qa-temp
+      - name: Correct false-qualified diplomacy enum assertion
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('.github/workflows/mini4x-v14-assertion-diagnostic.yml')
+          s=p.read_text()
+          old="check diplomacy_mode grep -q 'ScreenMode.DIPLOMACY' project/app/src/main/java/com/example/mini4x/presentation/GamePresenter.kt"
+          new="check diplomacy_mode grep -q 'DIPLOMACY' project/app/src/main/java/com/example/mini4x/presentation/GamePresenter.kt"
+          assert old in s
+          p.write_text(s.replace(old,new,1))
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/mini4x-v14-assertion-diagnostic.yml
+          git commit -m 'qa: fix diplomacy enum sanity check'
+          git push origin HEAD:mini4x-public-qa-temp
