@@ -1,0 +1,39 @@
+name: Temporary Mini4X V12 Relay
+on:
+  push:
+    branches: [mini4x-public-qa-temp]
+    paths: ['.github/workflows/mini4x-v14-relay-v12.yml']
+permissions:
+  contents: read
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Capture generator and V12 inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          fetch(){ mkdir -p "$(dirname "$1")"; curl --connect-timeout 10 --max-time 30 -fsSL "$2" -o "$1"; test -s "$1"; }
+          fetch final-generator/generator.00.part 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/final-generator/generator.00.part?token=BXN2EFPW4P7BHJJ5NL4H2LTKQL375AA'
+          fetch final-generator/generator.01.part 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/final-generator/generator.01.part?token=BXN2EFMSTIVX4LJC6CDIWJLKQL375AA'
+          fetch final-generator/generator.02.part 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/final-generator/generator.02.part?token=BXN2EFLY446GGDA3P2OGHHLKQL375AA'
+          fetch final-generator/generator.03.part 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/final-generator/generator.03.part?token=BXN2EFL3N2MDNX6WZFRNSGLKQL375AA'
+          fetch v12-patch/apply_v12.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/apply_v12.py?token=BXN2EFIPK2KMLJ45VAHTT3TKQL4AJAA'
+          fetch v12-patch/payloads/GameAssetAtlas.kt.part00 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/GameAssetAtlas.kt.part00?token=BXN2EFNDEEKZWKJBIWQMY4DKQL4AXAA'
+          fetch v12-patch/payloads/GamePresenter.kt.part00 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/GamePresenter.kt.part00?token=BXN2EFMHKNB6A2ZHGAYA4B3KQL4AXAA'
+          fetch v12-patch/payloads/MainActivity.kt.part00 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/MainActivity.kt.part00?token=BXN2EFMGREEID4GPPOWZ5VDKQL4AXAA'
+          fetch v12-patch/payloads/Mini4xView.kt.part00 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/Mini4xView.kt.part00?token=BXN2EFLYU2REKAUBZA5QSPDKQL4AXAA'
+          fetch v12-patch/payloads/Mini4xView.kt.part01 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/Mini4xView.kt.part01?token=BXN2EFKX57JBDEFWEFUZIG3KQL4AXAA'
+          fetch v12-patch/payloads/Mini4xView.kt.part02 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/Mini4xView.kt.part02?token=BXN2EFLNC5SUPOTT5SSPCVTKQL4AXAA'
+          fetch v12-patch/payloads/Mini4xView.kt.part03 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/Mini4xView.kt.part03?token=BXN2EFIF62EZB2XMG7HAIMTKQL4AXAA'
+          fetch v12-patch/payloads/Mini4xView.kt.part04 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/Mini4xView.kt.part04?token=BXN2EFNO4LWFR6WAQNCEMK3KQL4AXAA'
+          fetch v12-patch/payloads/Mini4xView.kt.part05 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/Mini4xView.kt.part05?token=BXN2EFOK6PKJM5JC4GGD66LKQL4AXAA'
+          fetch v12-patch/payloads/app_build.gradle.kts.part00 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/app_build.gradle.kts.part00?token=BXN2EFNLGTUMI3XUMH5V32DKQL4AXAA'
+          tar -czf mini4x-v12-base.tar.gz final-generator v12-patch
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mini4x-v12-base
+          path: mini4x-v12-base.tar.gz
+          retention-days: 1
+          if-no-files-found: error
