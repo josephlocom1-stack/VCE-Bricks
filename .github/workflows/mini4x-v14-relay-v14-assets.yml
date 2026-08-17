@@ -1,0 +1,26 @@
+name: Temporary Mini4X V14 Asset Relay
+on:
+  push:
+    branches: [mini4x-public-qa-temp]
+    paths: ['.github/workflows/mini4x-v14-relay-v14-assets.yml']
+permissions:
+  contents: read
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Capture V14 naval assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          fetch(){ mkdir -p "$(dirname "$1")"; curl --connect-timeout 10 --max-time 30 -fsSL "$2" -o "$1"; test -s "$1"; }
+          fetch v14-ai/naval-safe-sources/production_naval_master_compact.webp.b64 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/naval-safe-sources/production_naval_master_compact.webp.b64?token=BXN2EFKF3VN4K2XO4OPXHILKQL4OLAA'
+          fetch v14-ai/naval-safe-sources/raft_styleA_production.png.b64 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/naval-safe-sources/raft_styleA_production.png.b64?token=BXN2EFIWAD27LULCCHP7EQTKQL4OLAA'
+          tar -czf mini4x-v14-assets.tar.gz v14-ai/naval-safe-sources
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mini4x-v14-assets
+          path: mini4x-v14-assets.tar.gz
+          retention-days: 1
+          if-no-files-found: error
