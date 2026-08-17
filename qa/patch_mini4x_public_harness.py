@@ -46,9 +46,27 @@ assert s.count('\nstart() {\n')==1,'start anchor drifted'
 s=s.replace('\nstart() {\n','\n'+readiness+'start() {\n',1)
 
 old_local='  local args=("$@") scenario="" before count line\n'
-new_local='  local args=("$@") scenario="" before count line scenario_screen\n'
+new_local='  local args=("$@") scenario="" before count line scenario_screen launch_out\n'
 assert s.count(old_local)==1,'start locals anchor drifted'
 s=s.replace(old_local,new_local,1)
+
+old_launch='''  if ! timeout 15s adb shell am start -n "$PKG/$ACT" "$@" >> "$PROGRESS" 2>&1; then
+    mark "FAIL am_start $*"
+    return 1
+  fi'''
+new_launch='''  if ! launch_out="$(timeout 90s adb shell am start -W -n "$PKG/$ACT" "$@" 2>&1)"; then
+    printf '%s\\n' "$launch_out" >> "$PROGRESS"
+    mark "FAIL am_start_wait $*"
+    return 1
+  fi
+  printf '%s\\n' "$launch_out" >> "$PROGRESS"
+  if ! printf '%s\\n' "$launch_out" | grep -q '^Status: ok'; then
+    mark "FAIL activity_launch_status $*"
+    return 1
+  fi
+  mark "ACTIVITY_LAUNCH_OK $*"'''
+assert s.count(old_launch)==1,'activity launch anchor drifted'
+s=s.replace(old_launch,new_launch,1)
 
 old_ready='''        mark "SCENARIO_READY $scenario :: $line"
         sleep .45
@@ -74,11 +92,15 @@ assert 'settings put global hide_error_dialogs 1' in s
 assert 'android.intent.action.CLOSE_SYSTEM_DIALOGS' in s
 assert 'wait_input_ready(){' in s
 assert 'adb shell input tap 12 12' in s
+assert 'am start -W -n "$PKG/$ACT"' in s
+assert 'timeout 90s adb shell am start -W' in s
+assert 'ACTIVITY_LAUNCH_OK' in s
 assert 'wait_input_ready "$scenario_screen"' in s
 assert 'wait_input_ready TITLE' in s
 assert 'tap_expect TITLE 540 1416' in s
 assert 'tap_expect SETUP 540 1416' not in s
 p.write_text(s)
 print('public_harness_dialog_guard=PASS')
+print('public_harness_activity_launch_wait=PASS')
 print('public_harness_input_readiness=PASS')
 print('public_harness_locked_title_contract=PASS')
