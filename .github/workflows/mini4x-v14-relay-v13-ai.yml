@@ -1,0 +1,42 @@
+name: Temporary Mini4X V13 AI Relay
+on:
+  push:
+    branches: [mini4x-public-qa-temp]
+    paths: ['.github/workflows/mini4x-v14-relay-v13-ai.yml']
+permissions:
+  contents: read
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Capture V13 AI inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          fetch(){ mkdir -p "$(dirname "$1")"; curl --connect-timeout 10 --max-time 30 -fsSL "$2" -o "$1"; test -s "$1"; }
+          fetch v13-ai/apply_v13_ai.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/apply_v13_ai.py?token=BXN2EFKDY5UT6YLYJNOC623KQL4IJAA'
+          fetch v13-ai/safe-sources/production_master.webp.b64.000 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.000?token=BXN2EFKIKFTNQGR6D7LVYRDKQL4IVAA'
+          fetch v13-ai/safe-sources/production_master.webp.b64.001 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.001?token=BXN2EFMUOBBSMDQQLEX4FRDKQL4IVAA'
+          fetch v13-ai/safe-sources/production_master.webp.b64.002 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.002?token=BXN2EFLKLPTF5ZC3TT7NGYDKQL4IVAA'
+          fetch v13-ai/safe-sources/production_master.webp.b64.003 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.003?token=BXN2EFP37UEWUB7A2LJGGK3KQL4IVAA'
+          fetch v13-ai/safe-sources/production_master.webp.b64.004 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.004?token=BXN2EFPYNBU62OV5Y3AK56LKQL4IVAA'
+          fetch v13-ai/safe-sources/production_master.webp.b64.005 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.005?token=BXN2EFI6QRQRX5P7IARLSGLKQL4IVAA'
+          fetch v13-ai/safe-sources/production_master.webp.b64.006 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.006?token=BXN2EFPDTNMRH57XF4H23F3KQL4IVAA'
+          fetch v13-ai/safe-sources/production_master.webp.b64.007 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.007?token=BXN2EFMJDZ5P6S6NZV2SCLLKQL4IVAA'
+          fetch v13-ai/safe-sources/production_master.webp.b64.008 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.008?token=BXN2EFLBT2BHPETQN52IPWTKQL4IVAA'
+          fetch v13-ai/safe-sources/production_master.webp.b64.009 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.009?token=BXN2EFLGWZFWU3QKJMKVXILKQL4IVAA'
+          fetch v13-ai/safe-sources/production_master.webp.b64.010 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.010?token=BXN2EFMFREGLOURJB2XKOITKQL4IVAA'
+          fetch v13-ai/safe-sources/production_master.webp.b64.011 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.011?token=BXN2EFPLEK6L5QU3QR5PZ7DKQL4IVAA'
+          fetch v13-ai/safe-sources/production_master.webp.b64.012 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.012?token=BXN2EFKMNDJ5MJUGHJASV4TKQL4IVAA'
+          fetch v13-ai/safe-sources/production_master.webp.b64.013 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.013?token=BXN2EFJAXW4BNZWDG2KBF2DKQL4IVAA'
+          fetch v13-ai/safe-sources/production_master.webp.b64.014 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.014?token=BXN2EFPBENRS4RMNOGYEUWDKQL4IVAA'
+          fetch v13-ai/safe-sources/production_master.webp.b64.015 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.015?token=BXN2EFJTMTRZC76ZTHMMKMDKQL4IVAA'
+          fetch v13-ai/safe-sources/production_master.webp.b64.016 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.016?token=BXN2EFPUOJG5EFVWSETDZS3KQL4IVAA'
+          tar -czf mini4x-v13-ai.tar.gz v13-ai
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mini4x-v13-ai
+          path: mini4x-v13-ai.tar.gz
+          retention-days: 1
+          if-no-files-found: error
