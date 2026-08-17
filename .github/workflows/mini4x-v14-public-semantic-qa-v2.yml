@@ -1,9 +1,6 @@
 name: Mini4X V1.4 Emulator-Only Input-Ready Retry
 
 on:
-  push:
-    branches: [mini4x-public-qa-temp]
-    paths: ['.github/workflows/mini4x-v14-public-semantic-qa-v2.yml']
   workflow_dispatch:
 
 permissions:
