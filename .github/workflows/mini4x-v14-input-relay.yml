@@ -1,0 +1,36 @@
+name: Temporary Mini4X Input Relay
+on:
+  push:
+    branches: [mini4x-public-qa-temp]
+    paths: ['.github/workflows/mini4x-v14-input-relay.yml']
+permissions:
+  contents: read
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Capture fresh private input group
+        shell: bash
+        run: |
+          set -euo pipefail
+          fetch(){ mkdir -p "$(dirname "$1")"; curl --connect-timeout 10 --max-time 30 -fsSL "$2" -o "$1"; test -s "$1"; }
+          fetch buildsrc/noassets.00.b64 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.00.b64?token=BXN2EFL6XWB5CJBT5HF3WADKQL3ZDAA'
+          fetch buildsrc/noassets.01.b64 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.01.b64?token=BXN2EFKPTWSG2TD5A4BLPPLKQL3ZDAA'
+          fetch buildsrc/noassets.02.b64 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.02.b64?token=BXN2EFKGDQBQYSXOEQI6HIDKQL3ZDAA'
+          fetch buildsrc/noassets.03.b64 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.03.b64?token=BXN2EFLIJ3IFY2LQGY4NOALKQL3ZDAA'
+          fetch buildsrc/noassets.04a.b64 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.04a.b64?token=BXN2EFLRJNI5MI7HLU2KDNTKQL3ZDAA'
+          fetch buildsrc/noassets.04b.b64 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.04b.b64?token=BXN2EFMP3W4QB2RMSUUZNS3KQL3ZDAA'
+          fetch buildsrc/noassets.05.b64 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.05.b64?token=BXN2EFISKV6WYYNXY4WSMO3KQL3ZDAA'
+          fetch buildsrc/noassets.06.b64 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.06.b64?token=BXN2EFNAW6V3VTJE3XIEUOTKQL3ZDAA'
+          fetch buildsrc/noassets.07.b64 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.07.b64?token=BXN2EFNY2THUVRCGGGAJHRDKQL3ZDAA'
+          fetch buildsrc/noassets.08a.b64 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.08a.b64?token=BXN2EFLLTYBMMEU4JCZLHMDKQL3ZDAA'
+          fetch buildsrc/noassets.08b.b64 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.08b.b64?token=BXN2EFOEVT2OSGIXNWZFGY3KQL3ZDAA'
+          fetch buildsrc/noassets.09.b64 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.09.b64?token=BXN2EFOFZMOHHZ3EOUEUK7DKQL3ZDAA'
+          tar -czf mini4x-buildsrc.tar.gz buildsrc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mini4x-buildsrc
+          path: mini4x-buildsrc.tar.gz
+          retention-days: 1
+          if-no-files-found: error
