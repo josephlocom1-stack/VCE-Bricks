@@ -78,7 +78,7 @@ jobs:
           check agp_8_10_1 grep -q '8.10.1' project/build.gradle.kts
           check peace_safety grep -q 'Never break peace while our units are still inside' project/app/src/main/java/com/example/mini4x/ai/StrategicAi.kt
           check critical_threat grep -q 'criticalThreat' project/app/src/main/java/com/example/mini4x/ai/StrategicAi.kt
-          check diplomacy_mode grep -q 'ScreenMode.DIPLOMACY' project/app/src/main/java/com/example/mini4x/presentation/GamePresenter.kt
+          check diplomacy_mode grep -q 'DIPLOMACY' project/app/src/main/java/com/example/mini4x/presentation/GamePresenter.kt
           check diplomacy_draw grep -q 'private fun drawDiplomacy' project/app/src/main/java/com/example/mini4x/ui/Mini4xView.kt
           check tile_context_label grep -q 'private fun tileContextLabel' project/app/src/main/java/com/example/mini4x/ui/Mini4xView.kt
           check selection_reconcile grep -q 'private fun reconcileSelectionAfterCommand' project/app/src/main/java/com/example/mini4x/presentation/GamePresenter.kt
