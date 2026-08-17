@@ -1,0 +1,38 @@
+name: Temporary Mini4X V14 Script Relay
+on:
+  push:
+    branches: [mini4x-public-qa-temp]
+    paths: ['.github/workflows/mini4x-v14-relay-v14-scripts.yml']
+permissions:
+  contents: read
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Capture V14 scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          fetch(){ mkdir -p "$(dirname "$1")"; curl --connect-timeout 10 --max-time 30 -fsSL "$2" -o "$1"; test -s "$1"; }
+          fetch v14-ai/apply_v14_full_roster_ai.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_full_roster_ai.py?token=BXN2EFK2JEXBB75TFCOSNULKQL4MJAA'
+          fetch v14-ai/apply_v14_naval_ai.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_naval_ai.py?token=BXN2EFNEJDF3NUUF4U64N5LKQL4MJAA'
+          fetch v14-ai/apply_v14_ai_quality.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_ai_quality.py?token=BXN2EFIOF5WERNUYN6RWEH3KQL4MJAA'
+          fetch v14-ai/apply_v14_ai_quality_v2.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_ai_quality_v2.py?token=BXN2EFJ5HYZNC3JJPGKFRKLKQL4MJAA'
+          fetch v14-ai/apply_v14_ai_quality_v3.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_ai_quality_v3.py?token=BXN2EFKVTS7HMWS5CNYJVNTKQL4MJAA'
+          fetch v14-ai/apply_v14_ai_quality_v4.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_ai_quality_v4.py?token=BXN2EFIJLWZRHK5OKPATX33KQL4MJAA'
+          fetch v14-ai/apply_v14_play_ready.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_play_ready.py?token=BXN2EFOXY22T3GWS2R7V77DKQL4MJAA'
+          fetch v14-ai/apply_v14_diplomacy_ui.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_diplomacy_ui.py?token=BXN2EFI3ZWXGDDJHLDDYU73KQL4MJAA'
+          fetch v14-ai/apply_v14_tile_actions_ui.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_tile_actions_ui.py?token=BXN2EFM5LUPVTHT752BD7PLKQL4MJAA'
+          fetch v14-ai/apply_v14_result_lifecycle.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_result_lifecycle.py?token=BXN2EFNJNAGFJ4A7FLUJJSTKQL4MJAA'
+          fetch v14-ai/apply_v14_command_reachability.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_command_reachability.py?token=BXN2EFLUWPH2OIKQP6H7XXTKQL4MJAA'
+          fetch v14-ai/apply_v14_game_flow_lifecycle.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_game_flow_lifecycle.py?token=BXN2EFOZXVGLDIYFVBJJHN3KQL4MJAA'
+          fetch v14-ai/apply_v14_selection_lifecycle.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_selection_lifecycle.py?token=BXN2EFKX5TA664OYZQASUZDKQL4MJAA'
+          fetch v14-ai/apply_v14_safe_new_game.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_safe_new_game.py?token=BXN2EFI2HRIQSHIIX4HGQJLKQL4MJAA'
+          tar -czf mini4x-v14-scripts.tar.gz v14-ai
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mini4x-v14-scripts
+          path: mini4x-v14-scripts.tar.gz
+          retention-days: 1
+          if-no-files-found: error
