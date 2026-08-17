@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   qa:
@@ -16,86 +17,88 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch exact locked private candidate inputs
+      - name: Download relayed build archive
+        uses: actions/download-artifact@v4
+        with:
+          name: mini4x-buildsrc
+          path: relay/buildsrc
+          github-token: ${{ github.token }}
+          repository: josephlocom1-stack/VCE-Bricks
+          run-id: 32027530759
+      - name: Download relayed generator
+        uses: actions/download-artifact@v4
+        with:
+          name: mini4x-generator
+          path: relay/generator
+          github-token: ${{ github.token }}
+          repository: josephlocom1-stack/VCE-Bricks
+          run-id: 32027780110
+      - name: Download relayed V12 patch
+        uses: actions/download-artifact@v4
+        with:
+          name: mini4x-v12
+          path: relay/v12
+          github-token: ${{ github.token }}
+          repository: josephlocom1-stack/VCE-Bricks
+          run-id: 32027823008
+      - name: Download relayed V13 AI inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: mini4x-v13-ai
+          path: relay/v13-ai
+          github-token: ${{ github.token }}
+          repository: josephlocom1-stack/VCE-Bricks
+          run-id: 32027879200
+      - name: Download relayed V13 QA inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: mini4x-v13-qa
+          path: relay/v13-qa
+          github-token: ${{ github.token }}
+          repository: josephlocom1-stack/VCE-Bricks
+          run-id: 32027906449
+      - name: Download relayed V14 scripts
+        uses: actions/download-artifact@v4
+        with:
+          name: mini4x-v14-scripts
+          path: relay/v14-scripts
+          github-token: ${{ github.token }}
+          repository: josephlocom1-stack/VCE-Bricks
+          run-id: 32027949459
+      - name: Download relayed V14 assets
+        uses: actions/download-artifact@v4
+        with:
+          name: mini4x-v14-assets
+          path: relay/v14-assets
+          github-token: ${{ github.token }}
+          repository: josephlocom1-stack/VCE-Bricks
+          run-id: 32027974246
+      - name: Download relayed QA harness
+        uses: actions/download-artifact@v4
+        with:
+          name: mini4x-qa-harness
+          path: relay/qa-harness
+          github-token: ${{ github.token }}
+          repository: josephlocom1-stack/VCE-Bricks
+          run-id: 32028004472
+
+      - name: Assemble exact relayed private inputs
         shell: bash
         run: |
           set -euo pipefail
-          fetch() { local p="$1" u="$2"; mkdir -p "$(dirname "$p")"; curl --retry 2 --connect-timeout 10 --max-time 120 -fsSL "$u" -o "$p"; test -s "$p"; }
-          while IFS='|' read -r p u; do
-            [ -z "$p" ] && continue
-            fetch "$p" "$u"
-          done <<'EOF'
-          buildsrc/noassets.00.b64|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.00.b64?token=BXN2EFNZ7KP4BNYXR275QRTKQL3L3AA
-          buildsrc/noassets.01.b64|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.01.b64?token=BXN2EFILH6H2YZW3ZRC226TKQL3L3AA
-          buildsrc/noassets.02.b64|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.02.b64?token=BXN2EFNU4OFTOKWP65GOUWTKQL3L3AA
-          buildsrc/noassets.03.b64|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.03.b64?token=BXN2EFMB3WMLXRGWJWVO36TKQL3L3AA
-          buildsrc/noassets.04a.b64|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.04a.b64?token=BXN2EFOFV5XJGXDFFJQDA23KQL3L3AA
-          buildsrc/noassets.04b.b64|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.04b.b64?token=BXN2EFLYKPJKTL2LTVR7EB3KQL3L3AA
-          buildsrc/noassets.05.b64|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.05.b64?token=BXN2EFPAL7BK3RMVZQGLFXLKQL3L3AA
-          buildsrc/noassets.06.b64|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.06.b64?token=BXN2EFJY5BWGXCPLYBGMXCDKQL3L3AA
-          buildsrc/noassets.07.b64|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.07.b64?token=BXN2EFOQ2ZA2YE7AXHMSICDKQL3L3AA
-          buildsrc/noassets.08a.b64|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.08a.b64?token=BXN2EFOUHZ2BVEPUYPD7NMTKQL3L3AA
-          buildsrc/noassets.08b.b64|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.08b.b64?token=BXN2EFIFO3FBKRIGJYETMETKQL3L3AA
-          buildsrc/noassets.09.b64|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/buildsrc/noassets.09.b64?token=BXN2EFLZLCTFBV6SOXW7BOTKQL3L3AA
-          final-generator/generator.00.part|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/final-generator/generator.00.part?token=BXN2EFIPXVMTSSPO654MY7LKQL3GXAA
-          final-generator/generator.01.part|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/final-generator/generator.01.part?token=BXN2EFP4IXOZ7WW2RHEFI3DKQL3GXAA
-          final-generator/generator.02.part|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/final-generator/generator.02.part?token=BXN2EFOKUQCMAUEBKFH6CB3KQL3GXAA
-          final-generator/generator.03.part|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/final-generator/generator.03.part?token=BXN2EFKFI5WYXUWE22V6SZTKQL3GXAA
-          v12-patch/apply_v12.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/apply_v12.py?token=BXN2EFN6AODRBT6PAQMSB6LKQL3HJAA
-          v12-patch/payloads/GameAssetAtlas.kt.part00|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/GameAssetAtlas.kt.part00?token=BXN2EFK2YNL6LQBGNZUAEUDKQL3HRAA
-          v12-patch/payloads/GamePresenter.kt.part00|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/GamePresenter.kt.part00?token=BXN2EFPCK5D43CL3ORMKNGTKQL3HRAA
-          v12-patch/payloads/MainActivity.kt.part00|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/MainActivity.kt.part00?token=BXN2EFO7VUBXXTVSROIQ2YTKQL3HRAA
-          v12-patch/payloads/Mini4xView.kt.part00|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/Mini4xView.kt.part00?token=BXN2EFPE55PNOHASKXZBIS3KQL3HRAA
-          v12-patch/payloads/Mini4xView.kt.part01|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/Mini4xView.kt.part01?token=BXN2EFPGE4XGQATIXU56LTLKQL3HRAA
-          v12-patch/payloads/Mini4xView.kt.part02|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/Mini4xView.kt.part02?token=BXN2EFOZFA5WT6CROMFC4STKQL3HRAA
-          v12-patch/payloads/Mini4xView.kt.part03|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/Mini4xView.kt.part03?token=BXN2EFPNJ5Z4OO7WSRLIWATKQL3HRAA
-          v12-patch/payloads/Mini4xView.kt.part04|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/Mini4xView.kt.part04?token=BXN2EFN6MCORPV7FOINN5XTKQL3HRAA
-          v12-patch/payloads/Mini4xView.kt.part05|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/Mini4xView.kt.part05?token=BXN2EFJN4PUX652GRIWYB73KQL3HRAA
-          v12-patch/payloads/app_build.gradle.kts.part00|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v12-patch/payloads/app_build.gradle.kts.part00?token=BXN2EFMMFZJVZZYABOX2Y7TKQL3HRAA
-          v13-ai/apply_v13_ai.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/apply_v13_ai.py?token=BXN2EFIR76EXG7B3WC5CTFTKQL3MNAA
-          v13-ai/safe-sources/production_master.webp.b64.000|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.000?token=BXN2EFMYQWBF5P55F5I4IOTKQL3MZAA
-          v13-ai/safe-sources/production_master.webp.b64.001|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.001?token=BXN2EFPD7BCTGS3REHSMV5TKQL3MZAA
-          v13-ai/safe-sources/production_master.webp.b64.002|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.002?token=BXN2EFIB2PQCWMEGC3GZVDLKQL3MZAA
-          v13-ai/safe-sources/production_master.webp.b64.003|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.003?token=BXN2EFN6N7FS25TY7SBJ53LKQL3MZAA
-          v13-ai/safe-sources/production_master.webp.b64.004|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.004?token=BXN2EFONMGEQYBY3YKXIBTTKQL3MZAA
-          v13-ai/safe-sources/production_master.webp.b64.005|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.005?token=BXN2EFPP55DMBV26KKPFJUDKQL3MZAA
-          v13-ai/safe-sources/production_master.webp.b64.006|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.006?token=BXN2EFJPK3U7LGVSECIOU3DKQL3MZAA
-          v13-ai/safe-sources/production_master.webp.b64.007|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.007?token=BXN2EFKAP74NUJRH4KH5QMLKQL3MZAA
-          v13-ai/safe-sources/production_master.webp.b64.008|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.008?token=BXN2EFKUACL4Q5PYHLJSMULKQL3MZAA
-          v13-ai/safe-sources/production_master.webp.b64.009|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.009?token=BXN2EFKQNRPDWD77KTVES6TKQL3MZAA
-          v13-ai/safe-sources/production_master.webp.b64.010|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.010?token=BXN2EFMCKMQJJZJXPUR2K33KQL3MZAA
-          v13-ai/safe-sources/production_master.webp.b64.011|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.011?token=BXN2EFM33GLY55T7VQFSGYDKQL3MZAA
-          v13-ai/safe-sources/production_master.webp.b64.012|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.012?token=BXN2EFJHMSISPFGK7VPGGQ3KQL3MZAA
-          v13-ai/safe-sources/production_master.webp.b64.013|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.013?token=BXN2EFPXKFRAJJM6GGT5NILKQL3MZAA
-          v13-ai/safe-sources/production_master.webp.b64.014|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.014?token=BXN2EFJYOB2CEMV5FSVGVWDKQL3MZAA
-          v13-ai/safe-sources/production_master.webp.b64.015|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.015?token=BXN2EFP75W2UH3BLQ7F65NLKQL3MZAA
-          v13-ai/safe-sources/production_master.webp.b64.016|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-ai/safe-sources/production_master.webp.b64.016?token=BXN2EFP2NYOU7EPU5JPVLPDKQL3MZAA
-          v13-qa/apply_v13_qa.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-qa/apply_v13_qa.py?token=BXN2EFNJWIBHTSOVSTWJVJTKQL3N5AA
-          v13-qa/apply_directional_facing.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-qa/apply_directional_facing.py?token=BXN2EFJNGI6GHBKC6QXB5TTKQL3N5AA
-          v13-qa/apply_v13_ui_review_fixes.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-qa/apply_v13_ui_review_fixes.py?token=BXN2EFN7IQHHBN7XYLSI4CLKQL3N5AA
-          v13-qa/apply_v13_action_review_fixes.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-qa/apply_v13_action_review_fixes.py?token=BXN2EFNNUHFLYVXTDHZKNOTKQL3N5AA
-          v14-ai/apply_v14_full_roster_ai.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_full_roster_ai.py?token=BXN2EFKDBXPRT5VHANNNSZTKQL3OFAA
-          v14-ai/apply_v14_naval_ai.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_naval_ai.py?token=BXN2EFOB5JKFC7WM5S2KIN3KQL3OFAA
-          v14-ai/naval-safe-sources/production_naval_master_compact.webp.b64|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/naval-safe-sources/production_naval_master_compact.webp.b64?token=BXN2EFIRFGDG4RG5OUH6HN3KQL3ORAA
-          v14-ai/naval-safe-sources/raft_styleA_production.png.b64|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/naval-safe-sources/raft_styleA_production.png.b64?token=BXN2EFMJ36JS2Q6RECBOMMDKQL3ORAA
-          v14-ai/apply_v14_ai_quality.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_ai_quality.py?token=BXN2EFLB5GINUKJRRX4GECDKQL3OFAA
-          v14-ai/apply_v14_ai_quality_v2.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_ai_quality_v2.py?token=BXN2EFOFTOONM5R4HPZQZQTKQL3OFAA
-          v14-ai/apply_v14_ai_quality_v3.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_ai_quality_v3.py?token=BXN2EFMY7EAMVKSLIHBIZ2LKQL3OFAA
-          v14-ai/apply_v14_ai_quality_v4.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_ai_quality_v4.py?token=BXN2EFIDHOKTNZFHR2C4BBTKQL3OFAA
-          v14-ai/apply_v14_play_ready.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_play_ready.py?token=BXN2EFJAT4TQT3KUJ6HV44DKQL3OFAA
-          v14-ai/apply_v14_diplomacy_ui.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_diplomacy_ui.py?token=BXN2EFJQZXG46LG4FVDJKQTKQL3OFAA
-          v14-ai/apply_v14_tile_actions_ui.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_tile_actions_ui.py?token=BXN2EFPA2CTBHMBILAIB2YLKQL3OFAA
-          v14-ai/apply_v14_result_lifecycle.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_result_lifecycle.py?token=BXN2EFL6MUHAVK63ZRL5EULKQL3OFAA
-          v14-ai/apply_v14_command_reachability.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_command_reachability.py?token=BXN2EFI4D2TI7AUK3XZBQ2LKQL3OFAA
-          v14-ai/apply_v14_game_flow_lifecycle.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_game_flow_lifecycle.py?token=BXN2EFLLIPWP6YPJDQYDX6DKQL3OFAA
-          v14-ai/apply_v14_selection_lifecycle.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_selection_lifecycle.py?token=BXN2EFNB5UZGVZPLHIQNLCDKQL3OFAA
-          v14-ai/apply_v14_safe_new_game.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v14-ai/apply_v14_safe_new_game.py?token=BXN2EFOLFSUGRBU5NGLOKJTKQL3OFAA
-          qa/inject_emulator_scenarios.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/qa/inject_emulator_scenarios.py?token=BXN2EFMCEYR4MQZGUZFSHATKQL3O3AA
-          qa/mini4x_emulator_flow.sh|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/qa/mini4x_emulator_flow.sh?token=BXN2EFNJ2UZFBJZKCTCX2ODKQL3O3AA
-          qa/build_visual_evidence.py|https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/qa/build_visual_evidence.py?token=BXN2EFOTCWBBGFDZSTZQINDKQL3O3AA
-          EOF
-          test "$(find buildsrc final-generator v12-patch v13-ai v13-qa v14-ai qa -type f | wc -l | tr -d ' ')" -ge 67
-          echo private_input_transfer=PASS
+          for f in relay/*/*.tar.gz; do tar -xzf "$f"; done
+          test -s buildsrc/noassets.00.b64
+          test -s buildsrc/noassets.09.b64
+          test -s final-generator/generator.00.part
+          test -s v12-patch/apply_v12.py
+          test -s v13-ai/apply_v13_ai.py
+          test -s v13-qa/apply_v13_qa.py
+          test -s v14-ai/apply_v14_full_roster_ai.py
+          test -s v14-ai/naval-safe-sources/production_naval_master_compact.webp.b64
+          test -s v14-ai/naval-safe-sources/raft_styleA_production.png.b64
+          test -s qa/inject_emulator_scenarios.py
+          test -s qa/mini4x_emulator_flow.sh
+          echo relay_artifact_assembly=PASS
 
       - uses: actions/setup-java@v5
         with: {distribution: temurin, java-version: '17'}
@@ -209,7 +212,18 @@ jobs:
           cp -R visual-review-out public-evidence/ 2>/dev/null || true
           cp qa_badging.txt qa_apk_sha256.txt v14_ai_log.txt ai_quality_log.txt play_ready_log.txt ui_fix_log.txt action_fix_log.txt diplomacy_ui_log.txt tile_actions_ui_log.txt result_lifecycle_log.txt command_reachability_log.txt game_flow_lifecycle_log.txt selection_lifecycle_log.txt safe_new_game_log.txt pass2_progress.txt pass2_meminfo.txt pass2_gfxinfo.txt pass2_crashes.txt pass2_logcat.txt public-evidence/ 2>/dev/null || true
           cp project/app/build/outputs/apk/debug/app-debug.apk public-evidence/Mini4X-v1.4-semantic-qa.apk 2>/dev/null || true
-          printf 'public_runner_repo=%s\npublic_runner_run=%s\nlocked_private_product_checkpoint=34ed65d70f2ee23f97700b4942be54f191409632\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" > public-evidence/PROVENANCE.txt
+          cat > public-evidence/PROVENANCE.txt <<'EOF'
+          locked_private_product_checkpoint=34ed65d70f2ee23f97700b4942be54f191409632
+          relay_buildsrc_run=32027530759
+          relay_generator_run=32027780110
+          relay_v12_run=32027823008
+          relay_v13_ai_run=32027879200
+          relay_v13_qa_run=32027906449
+          relay_v14_scripts_run=32027949459
+          relay_v14_assets_run=32027974246
+          relay_qa_harness_run=32028004472
+          EOF
+          printf 'public_runner_repo=%s\npublic_runner_run=%s\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> public-evidence/PROVENANCE.txt
 
       - name: Upload semantic evidence
         if: always()
