@@ -41,25 +41,25 @@ jobs:
           p=Path('qa/mini4x_emulator_flow.sh')
           src=p.read_text()
           old_result='''shot 25_victory_result
-tap_expect RESULT 90 90
-mark "RESULT_STRAY_TAP_OK"
-tap_expect TITLE 540 1416
-mark "RESULT_NEW_GAME_OK"'''
+          tap_expect RESULT 90 90
+          mark "RESULT_STRAY_TAP_OK"
+          tap_expect TITLE 540 1416
+          mark "RESULT_NEW_GAME_OK"'''
           new_result='''shot 25_victory_result
-tap_expect RESULT 90 90
-mark "RESULT_STRAY_TAP_OK"
-tap_expect SETUP 540 1416
-mark "RESULT_NEW_GAME_OK"'''
+          tap_expect RESULT 90 90
+          mark "RESULT_STRAY_TAP_OK"
+          tap_expect SETUP 540 1416
+          mark "RESULT_NEW_GAME_OK"'''
           old_device='''if [ "$boot" != "1" ]; then mark "FAIL device_not_booted value=$boot"; exit 1; fi
-adb20 shell wm size 1080x2400'''
+          adb20 shell wm size 1080x2400'''
           new_device='''if [ "$boot" != "1" ]; then mark "FAIL device_not_booted value=$boot"; exit 1; fi
-adb20 shell settings put global hide_error_dialogs 1
-dialog_guard="$(adb20 shell settings get global hide_error_dialogs | tr -d '\\r')"
-if [ "$dialog_guard" != "1" ]; then mark "FAIL system_dialog_guard value=$dialog_guard"; exit 1; fi
-adb20 shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
-sleep .5
-mark "SYSTEM_DIALOG_GUARD_OK hide_error_dialogs=$dialog_guard"
-adb20 shell wm size 1080x2400'''
+          adb20 shell settings put global hide_error_dialogs 1
+          dialog_guard="$(adb20 shell settings get global hide_error_dialogs | tr -d '\\r')"
+          if [ "$dialog_guard" != "1" ]; then mark "FAIL system_dialog_guard value=$dialog_guard"; exit 1; fi
+          adb20 shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
+          sleep .5
+          mark "SYSTEM_DIALOG_GUARD_OK hide_error_dialogs=$dialog_guard"
+          adb20 shell wm size 1080x2400'''
           assert src.count(old_result)==1, 'result-route anchor drifted'
           assert src.count(old_device)==1, 'system-dialog guard anchor drifted'
           p.write_text(src.replace(old_result,new_result,1).replace(old_device,new_device,1))
