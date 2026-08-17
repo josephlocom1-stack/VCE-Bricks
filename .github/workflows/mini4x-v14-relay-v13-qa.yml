@@ -1,0 +1,28 @@
+name: Temporary Mini4X V13 QA Relay
+on:
+  push:
+    branches: [mini4x-public-qa-temp]
+    paths: ['.github/workflows/mini4x-v14-relay-v13-qa.yml']
+permissions:
+  contents: read
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Capture V13 QA inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          fetch(){ mkdir -p "$(dirname "$1")"; curl --connect-timeout 10 --max-time 30 -fsSL "$2" -o "$1"; test -s "$1"; }
+          fetch v13-qa/apply_v13_qa.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-qa/apply_v13_qa.py?token=BXN2EFOQ7ATGTNZRHOW5ZQ3KQL4K7AA'
+          fetch v13-qa/apply_directional_facing.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-qa/apply_directional_facing.py?token=BXN2EFJHT67HXIRROWKOYG3KQL4K7AA'
+          fetch v13-qa/apply_v13_ui_review_fixes.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-qa/apply_v13_ui_review_fixes.py?token=BXN2EFN5QWYC5QBIMNUNKODKQL4K7AA'
+          fetch v13-qa/apply_v13_action_review_fixes.py 'https://raw.githubusercontent.com/josephlocom1-stack/Backfill/mini4x-v14-ai-production/v13-qa/apply_v13_action_review_fixes.py?token=BXN2EFIOKS2SRMRF4BINVB3KQL4K7AA'
+          tar -czf mini4x-v13-qa.tar.gz v13-qa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mini4x-v13-qa
+          path: mini4x-v13-qa.tar.gz
+          retention-days: 1
+          if-no-files-found: error
