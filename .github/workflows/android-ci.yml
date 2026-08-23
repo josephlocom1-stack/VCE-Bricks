@@ -1,0 +1,57 @@
+name: Android CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, feature/revision-reminder-mvp]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK 35
+        run: yes | sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Restore stable debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: revision-reminder-debug-keystore-v1
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Unit tests
+        run: |
+          gradle --no-daemon testDebugUnitTest > unit-test.log 2>&1 || {
+            cat unit-test.log
+            exit 1
+          }
+      - name: Android lint
+        run: gradle --no-daemon lintDebug
+      - name: Assemble debug APK
+        run: gradle --no-daemon assembleDebug
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: revision-reminder-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-ci-failure-logs
+          path: |
+            unit-test.log
+            app/build/reports/
+          if-no-files-found: warn
+          retention-days: 7
