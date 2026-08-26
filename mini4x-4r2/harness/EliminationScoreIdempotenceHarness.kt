@@ -1,0 +1,7 @@
+package com.example.mini4x.research
+
+import com.example.mini4x.sim.*
+
+object EliminationScoreIdempotenceHarness {
+    @JvmStatic fun main(args:Array<String>){val expectIdempotent=args.firstOrNull()=="expect-idempotent";val state=MapGenerator.create(GameConfig(seed=6_001_337L,mapSize=MapSizeSetting.NORMAL,waterPreset=WaterPreset.CONTINENTS,gameMode=GameMode.CONQUEST,factionIds=listOf("asteria","sunspire","virelia"),humanPlayerId=0,difficulty=2));val victim=2;check(state.ownedUnits(victim).isNotEmpty());state.ownedCities(victim).forEach{city->city.owner=0};check(state.ownedCities(victim).isEmpty());val unitsBefore=state.ownedUnits(victim).size;val firstEvents=mutableListOf<SimEvent>();DerivedState.recalculateAll(state,firstEvents);val firstScore=state.score[victim];val unitsAfterFirst=state.ownedUnits(victim).size;val eliminatedAfterFirst=state.players[victim].eliminated;val secondEvents=mutableListOf<SimEvent>();DerivedState.recalculateAll(state,secondEvents);val secondScore=state.score[victim];println("victim_units_before=$unitsBefore");println("victim_units_after_first=$unitsAfterFirst");println("victim_eliminated=$eliminatedAfterFirst");println("score_after_first=$firstScore");println("score_after_second=$secondScore");println("score_changed_second_pass=${firstScore!=secondScore}");check(eliminatedAfterFirst);check(unitsAfterFirst==0);if(expectIdempotent){check(firstScore==secondScore);check(secondEvents.none{it.type==EventType.SCORE_CHANGED});println("elimination_score_idempotence=PASS")}}
+}
