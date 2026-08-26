@@ -1,0 +1,155 @@
+)
+            d.rectangle((x-4,y,x+12,y+5),fill=lighten(stone,1.05))
+        d.arc((72,90,110,128),180,360,fill=stone,width=6)
+    elif typ=='sawmill':
+        draw_house(d,100,105,.65,accent,rgba('#CFA56E'))
+        d.ellipse((62,104,86,128),outline=rgba('#725137'),width=5)
+        for a in range(0,360,45):
+            x=74+math.cos(math.radians(a))*11; y=116+math.sin(math.radians(a))*11
+            d.line((74,116,x,y),fill=rgba('#725137'),width=2)
+    elif typ=='windmill':
+        draw_windmill(d,96,126,accent)
+    elif typ=='bridge':
+        # wooden bridge across diamond
+        for y in [97,103,109]:
+            d.line((60,y,132,y+10),fill=rgba('#8A633F'),width=5)
+        d.line((66,93,136,104),fill=rgba('#5C442F'),width=3)
+        d.line((56,102,126,113),fill=rgba('#5C442F'),width=3)
+
+def render_tile(faction, typ):
+    im=Image.new('RGBA',(192,176),(0,0,0,0))
+    p=FACTIONS[faction]
+    if typ in ('water','fish','ocean','starfish','port','bridge'):
+        top=rgba('#4BA6D8') if typ!='ocean' else rgba('#378ABF')
+    elif typ=='ice':
+        top=rgba('#CBE8EE')
+    else:
+        top=p['field']
+    d=iso_tile_base(im,top)
+    # water highlights
+    if typ in ('water','fish','ocean','starfish','port','bridge'):
+        for off in [0,18,-18]:
+            d.line((64+off,99,88+off,105),fill=rgba('#88C9E8',160),width=2)
+    if typ=='field': pass
+    elif typ=='forest':
+        for x,y,s in [(70,119,.75),(96,108,.85),(122,120,.72),(90,124,.65),(111,128,.6)]:
+            draw_tree(d,x,y,s,rgba('#2E804A'))
+    elif typ=='mountain':
+        draw_mountain(d,96,128,.72)
+    elif typ=='fish':
+        draw_fish(d,96,109,.9)
+    elif typ=='starfish':
+        for x,y in [(81,108),(109,112),(98,98)]:
+            pts=[]
+            for k in range(10):
+                a=-math.pi/2+k*math.pi/5
+                r=8 if k%2==0 else 3.5
+                pts.append((x+math.cos(a)*r,y+math.sin(a)*r))
+            poly(d,pts,rgba('#FFD36A'))
+    elif typ=='animal':
+        # small deer/sheep
+        for x,y in [(83,115),(111,111)]:
+            d.ellipse((x-8,y-6,x+8,y+4),fill=rgba('#D9B27C'))
+            d.ellipse((x+5,y-11,x+12,y-4),fill=rgba('#D9B27C'))
+            for lx in [-4,5]: d.line((x+lx,y+2,x+lx-1,y+11),fill=rgba('#72533B'),width=2)
+    elif typ=='fruit':
+        for x,y,s in [(78,116,.7),(108,111,.74),(126,123,.55)]:
+            draw_tree(d,x,y,s,rgba('#3A8748'))
+            for dx,dy in [(-5,0),(4,3),(0,-7)]:
+                d.ellipse((x+dx-3*s,y-22*s+dy-3*s,x+dx+3*s,y-22*s+dy+3*s),fill=rgba('#F2C245'))
+    elif typ in ('crop','farm'):
+        col=rgba('#E7D657') if typ=='crop' else rgba('#D6C94A')
+        for i in range(5):
+            x=60+i*15
+            d.line((x,113,x+28,126),fill=col,width=4)
+    elif typ=='ore':
+        for x,y,s in [(80,119,.8),(103,112,1),(121,124,.65)]:
+            poly(d,[(x,y),(x-7*s,y-7*s),(x-2*s,y-18*s),(x+7*s,y-9*s)],rgba('#818B9A'))
+            poly(d,[(x,y),(x+7*s,y-9*s),(x+11*s,y-3*s)],rgba('#B2BCC8'))
+    elif typ in ('forest_temple','forge','lumber_hut','market','mine','monument','port','ruin','sawmill','temple','village','windmill','bridge'):
+        draw_structure(d,typ,p['accent'])
+    return im
+
+# Build tiles atlas: order matches GameAtlasIndex: each faction 26 types with fog inserted after emberhold.
+tile_types=['animal','bridge','crop','farm','field','fish','forest','forest_temple','forge','fruit','ice','lumber_hut',
+            'market','mine','monument','mountain','ocean','ore','port','ruin','sawmill','starfish','temple','village','water','windmill']
+tile_names=[]
+for fac in ['asteria','emberhold']:
+    tile_names += [(fac,t) for t in tile_types]
+tile_names += [('fog','fog')]
+for fac in ['sunspire','virelia']:
+    tile_names += [(fac,t) for t in tile_types]
+len(tile_names)
+
+# Finish tile atlas
+tiles_atlas=Image.new('RGBA',(2112,1760),(0,0,0,0))
+for idx,(fac,typ) in enumerate(tile_names):
+    x=(idx%11)*192; y=(idx//11)*176
+    if fac=='fog':
+        im=Image.new('RGBA',(192,176),(0,0,0,0))
+        d=iso_tile_base(im,rgba('#D7EBF0'))
+        # faceted cloud/ice geometry
+        for cx,cy,r in [(76,101,22),(98,91,26),(119,104,21),(95,116,28)]:
+            d.ellipse((cx-r,cy-r*.45,cx+r,cy+r*.45),fill=rgba('#EAF6F7',240))
+        poly(d,[(52,108),(96,84),(142,109),(96,135)],rgba('#DDEFF2',170))
+    else:
+        im=render_tile(fac,typ)
+    tiles_atlas.alpha_composite(im,(x,y))
+tiles_path=f'{outdir}/tiles.webp'
+tiles_atlas.save(tiles_path,'WEBP',lossless=True,method=6)
+
+# Cities
+def draw_city_sprite(faction,level):
+    im=Image.new('RGBA',(192,192),(0,0,0,0)); d=ImageDraw.Draw(im); p=FACTIONS[faction]
+    draw_shadow(d,96,162,42+level*4,8+level)
+    # central platform
+    poly(d,[(45,144),(96,116),(148,144),(96,171)],rgba('#BAAFA0',170))
+    # buildings increase outward before upward
+    layouts={
+        1:[(96,122,.95)],
+        2:[(82,127,.75),(108,119,.86)],
+        3:[(72,132,.64),(97,121,.9),(122,132,.64)],
+        4:[(65,135,.58),(87,123,.72),(110,118,.86),(130,136,.55)],
+        5:[(60,137,.52),(78,126,.65),(98,116,.88),(119,126,.68),(138,139,.50),(98,139,.56)]
+    }
+    for i,(x,y,s) in enumerate(layouts[level]):
+        draw_house(d,x,y,s,p['roof'],rgba('#E5DED1'))
+        if level>=4 and i in (1,2):
+            # tower extension
+            d.rectangle((x-5*s,y-29*s,x+5*s,y-13*s),fill=rgba('#D9D0C2'))
+            poly(d,[(x-8*s,y-29*s),(x,y-36*s),(x+8*s,y-29*s),(x,y-23*s)],p['accent'])
+    # faction banner
+    d.line((96,80-level*2,96,110),fill=rgba('#6B513B'),width=3)
+    poly(d,[(97,82-level*2),(116,87-level*2),(97,92-level*2)],p['accent'])
+    return im
+
+cities_atlas=Image.new('RGBA',(960,768),(0,0,0,0))
+for r,fac in enumerate(['asteria','emberhold','sunspire','virelia']):
+    for c,level in enumerate(range(1,6)):
+        cities_atlas.alpha_composite(draw_city_sprite(fac,level),(c*192,r*192))
+cities_path=f'{outdir}/cities.webp'
+cities_atlas.save(cities_path,'WEBP',lossless=True,method=6)
+
+# Unit helpers
+def body_person(d, accent, kind):
+    skin=rgba('#E2B48A'); cloth=accent; dark=darken(accent,.65); metal=rgba('#D5DCE3')
+    # shadow
+    draw_shadow(d,96,169,28,6)
+    # legs
+    d.rectangle((86,133,94,162),fill=dark); d.rectangle((99,133,107,162),fill=dark)
+    # torso cuboid
+    poly(d,[(79,104),(96,95),(113,104),(96,116)],lighten(cloth,1.05))
+    poly(d,[(79,104),(96,116),(96,141),(79,129)],darken(cloth,.88))
+    poly(d,[(113,104),(96,116),(96,141),(113,129)],darken(cloth,.72))
+    # head large block/faceted
+    d.rounded_rectangle((78,70,114,105),radius=5,fill=skin)
+    poly(d,[(78,70),(96,61),(114,70),(96,80)],rgba('#E8BC91'))
+    # helmet/hood variations
+    if kind in ('defender','swordsman','knight','warrior','juggernaut','giant'):
+        poly(d,[(76,76),(96,61),(116,76),(112,84),(80,84)],metal if kind!='warrior' else dark)
+    elif kind in ('cloak','guerrilla','mind_bender'):
+        poly(d,[(75,78),(96,59),(117,78),(111,95),(81,95)],dark)
+    else:
+        d.rectangle((78,68,114,77),fill=dark)
+    # arms
+    d.rect
