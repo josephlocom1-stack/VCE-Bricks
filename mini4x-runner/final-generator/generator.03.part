@@ -1,0 +1,75 @@
+,38)],c)
+    elif name in ('construction','organization'):
+        for x,y in [(30,52),(48,40),(66,54)]:
+            d.rectangle((x-9,y-9,x+9,y+9),fill=c)
+    elif name=='diplomacy':
+        d.ellipse((27,31,45,49),fill=c); d.ellipse((51,31,69,49),fill=c)
+        d.line((36,50,60,50),fill=c,width=5)
+    elif name=='farming':
+        for x in [32,42,52,62]:
+            d.line((x,68,x+12,28),fill=c2,width=3)
+    elif name=='forestry':
+        for x,y,s in [(37,60,.7),(53,58,.8),(64,63,.55)]: draw_tree(d,x,y,s,c)
+    elif name=='free_spirit':
+        # wing
+        poly(d,[(25,53),(46,28),(43,48),(72,35),(48,68)],c)
+    elif name=='mathematics':
+        d.ellipse((25,25,71,71),outline=c,width=4)
+        d.line((48,25,48,71),fill=c,width=3); d.line((25,48,71,48),fill=c,width=3)
+    elif name=='meditation':
+        d.ellipse((41,25,55,39),fill=c)
+        d.arc((25,35,71,72),15,165,fill=c,width=5)
+        d.line((33,65,63,65),fill=c,width=5)
+    elif name=='mining':
+        d.line((28,68,64,30),fill=c,width=5); d.line((39,30,71,44),fill=c,width=5)
+    elif name=='navigation':
+        # compass
+        d.ellipse((24,24,72,72),outline=c,width=4)
+        poly(d,[(48,25),(56,48),(48,70),(40,48)],c)
+    elif name=='philosophy':
+        d.rectangle((28,28,68,66),outline=c,width=4); d.line((48,28,48,66),fill=c,width=3)
+    elif name=='ramming':
+        poly(d,[(21,53),(68,39),(75,48),(69,57)],c); poly(d,[(68,39),(82,48),(69,57)],c2)
+    elif name=='roads':
+        poly(d,[(35,18),(56,18),(68,78),(26,78)],c2)
+        for y in [30,44,58,70]: d.rectangle((45,y,49,y+6),fill=rgba('#2F8E75'))
+    elif name=='sailing':
+        d.line((48,22,48,67),fill=c,width=3); poly(d,[(50,25),(72,51),(50,55)],c); poly(d,[(28,67),(72,67),(63,74),(36,74)],c2)
+    elif name=='smithery':
+        # anvil
+        poly(d,[(28,39),(67,39),(61,51),(53,51),(57,67),(37,67),(42,51),(30,51)],c)
+    elif name=='spiritualism':
+        d.ellipse((39,23,57,41),outline=c,width=3); d.line((48,41,48,70),fill=c,width=4)
+        d.arc((30,48,48,70),270,90,fill=c,width=3); d.arc((48,48,66,70),90,270,fill=c,width=3)
+    elif name=='strategy':
+        # shield + sword
+        poly(d,[(29,31),(55,31),(59,52),(42,69),(25,52)],c2); d.line((53,66,72,29),fill=c,width=4)
+    elif name=='trade':
+        d.line((25,38,70,38),fill=c,width=4); d.line((70,38,62,30),fill=c,width=4); d.line((70,38,62,46),fill=c,width=4)
+        d.line((70,60,25,60),fill=c2,width=4); d.line((25,60,33,52),fill=c2,width=4); d.line((25,60,33,68),fill=c2,width=4)
+    return im
+
+tech_atlas=Image.new('RGBA',(480,480),(0,0,0,0))
+for idx,name in enumerate(tech_names):
+    tech_atlas.alpha_composite(tech_icon(name),((idx%5)*96,(idx//5)*96))
+tech_path=f'{outdir}/tech.webp'
+tech_atlas.save(tech_path,'WEBP',lossless=True,method=6)
+
+# "fog" background atlas: dark star field to match V1.1 black outside finite board
+fog=Image.new('RGB',(1024,1024),rgba('#071019')[:3]); fd=ImageDraw.Draw(fog)
+rnd=random.Random(411)
+for i in range(430):
+    x=rnd.randrange(1024); y=rnd.randrange(1024); r=rnd.choice([1,1,1,1,2])
+    v=rnd.randrange(120,240)
+    fd.ellipse((x-r,y-r,x+r,y+r),fill=(v,v,min(255,v+12)))
+fog_path=f'{outdir}/fog.webp'
+fog.save(fog_path,'WEBP',lossless=True,method=6)
+
+# summary
+paths=[cities_path,tech_path,tiles_path,units_path,fog_path]
+summary={}
+for p in paths:
+    b=open(p,'rb').read()
+    im=Image.open(p)
+    summary[os.path.basename(p)]={'size':len(b),'sha256':hashlib.sha256(b).hexdigest(),'dimensions':im.size}
+summary
