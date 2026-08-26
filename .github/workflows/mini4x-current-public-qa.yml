@@ -1,0 +1,203 @@
+name: Mini4X Current Public QA
+
+on:
+  push:
+    branches: [mini4x-public-qa-temp]
+    paths:
+      - 'mini4x-runner/READY'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PRODUCT_CHECKPOINT: e6a4526bfe3bc0377ade85ecfd4b93d3803ed807
+  CANDIDATE_CONTRACT: locked_16_stage_result_new_game_to_title
+
+jobs:
+  run1-build-lock-and-qa:
+    name: Run 1 - product checksum + exact QA APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: mini4x-public-qa-temp
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Verify current relay bundle
+        working-directory: mini4x-runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '^private_source_sha=0660d71d101475a445a2021c3e11bdbc578d13ce$' SOURCE_LOCK.txt
+          grep -q '^product_checkpoint=e6a4526bfe3bc0377ade85ecfd4b93d3803ed807$' SOURCE_LOCK.txt
+          bash -n qa/reconstruct_v14_current.sh
+          bash -n qa/mini4x_emulator_flow.sh
+          python -m py_compile qa/inject_emulator_scenarios.py qa/build_visual_evidence.py qa/verify_semantic_evidence.py qa/verify_semantic_evidence_common.py
+
+      - name: Reconstruct and build locked product
+        working-directory: mini4x-runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'platform-tools'
+          python -m pip install --disable-pip-version-check --quiet pillow numpy
+          bash qa/reconstruct_v14_current.sh project | tee product_reconstruction.txt
+          grep -q 'v14_current_reconstruction=PASS stages=16' product_reconstruction.txt
+          ! grep -R -n 'fun qaScenario\|getStringExtra("qa")' project/app/src/main/java
+          gradle --no-daemon -p project :app:assembleDebug
+          APK=project/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose "$APK" >/dev/null
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$APK" | tee product_badging.txt
+          grep -q "package: name='com.mini4x.game'" product_badging.txt
+          grep -q "versionCode='15'" product_badging.txt
+          grep -q "versionName='1.4.0'" product_badging.txt
+          grep -q "sdkVersion:'26'" product_badging.txt
+          grep -q "targetSdkVersion:'36'" product_badging.txt
+          mkdir -p ../run1-artifact
+          cp "$APK" ../run1-artifact/product-debug.apk
+          sha256sum "$APK" | tee ../run1-artifact/product_apk_sha256.txt
+
+      - name: Inject QA and build exact QA APK once
+        working-directory: mini4x-runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          MINI4X_PROJECT=project python qa/inject_emulator_scenarios.py | tee qa_injection.txt
+          grep -q 'fun qaScenario(name:String)' project/app/src/main/java/com/example/mini4x/ui/Mini4xView.kt
+          grep -q '"responsive"->{' project/app/src/main/java/com/example/mini4x/ui/Mini4xView.kt
+          grep -q 'getStringExtra("qa")' project/app/src/main/java/com/example/mini4x/MainActivity.kt
+          gradle --no-daemon -p project :app:assembleDebug
+          APK=project/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          QA_SHA="$(sha256sum "$APK" | awk '{print $1}')"
+          INJECT_SHA="$(sha256sum qa/inject_emulator_scenarios.py | awk '{print $1}')"
+          HARNESS_SHA="$(sha256sum qa/mini4x_emulator_flow.sh | awk '{print $1}')"
+          cp "$APK" ../run1-artifact/qa-debug.apk
+          printf '%s  qa-debug.apk\n' "$QA_SHA" > ../run1-artifact/qa_apk_sha256.txt
+          cat > ../run1-artifact/PROVENANCE.txt <<EOF
+          locked_private_product_checkpoint=$PRODUCT_CHECKPOINT
+          candidate_contract=$CANDIDATE_CONTRACT
+          private_source_sha=0660d71d101475a445a2021c3e11bdbc578d13ce
+          source_apk_sha256=$QA_SHA
+          product_candidate_changed=false
+          qa_instrumentation=inject_emulator_scenarios.py
+          qa_instrumentation_sha256=$INJECT_SHA
+          semantic_harness_sha256=$HARNESS_SHA
+          qa_build_run=$GITHUB_RUN_ID
+          EOF
+          cp product_reconstruction.txt qa_injection.txt product_badging.txt ../run1-artifact/
+          echo "RUN1_PASS product_sha=$(awk '{print $1}' ../run1-artifact/product_apk_sha256.txt) qa_sha=$QA_SHA"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mini4x-current-run1-${{ github.run_id }}
+          retention-days: 3
+          if-no-files-found: error
+          path: run1-artifact/
+
+  run2-semantic-37-screen:
+    name: Run 2 - reuse exact QA APK / 37-screen gate
+    needs: run1-build-lock-and-qa
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: mini4x-public-qa-temp
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: mini4x-current-run1-${{ github.run_id }}
+          path: run1-artifact
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Bind exact Run 1 QA APK; no rebuild
+        working-directory: mini4x-runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew list coreutils >/dev/null 2>&1 || brew install coreutils
+          CORE="$(brew --prefix coreutils)/libexec/gnubin"
+          echo "$CORE" >> "$GITHUB_PATH"
+          python -m pip install --disable-pip-version-check --quiet pillow
+          mkdir -p project/app/build/outputs/apk/debug
+          cp ../run1-artifact/qa-debug.apk project/app/build/outputs/apk/debug/app-debug.apk
+          cp ../run1-artifact/qa_apk_sha256.txt qa_apk_sha256.txt
+          cp ../run1-artifact/PROVENANCE.txt PROVENANCE.txt
+          QA_SHA="$(shasum -a 256 project/app/build/outputs/apk/debug/app-debug.apk | awk '{print $1}')"
+          EXPECTED="$(awk '{print $1}' qa_apk_sha256.txt)"
+          INJECT_SHA="$(shasum -a 256 qa/inject_emulator_scenarios.py | awk '{print $1}')"
+          HARNESS_SHA="$(shasum -a 256 qa/mini4x_emulator_flow.sh | awk '{print $1}')"
+          test "$QA_SHA" = "$EXPECTED"
+          grep -q "^source_apk_sha256=$QA_SHA$" PROVENANCE.txt
+          grep -q "^qa_instrumentation_sha256=$INJECT_SHA$" PROVENANCE.txt
+          grep -q "^semantic_harness_sha256=$HARNESS_SHA$" PROVENANCE.txt
+          printf 'semantic_runner_run=%s\nsemantic_runner_sha=%s\nsemantic_harness_sha256=%s\n' "$GITHUB_RUN_ID" '0660d71d101475a445a2021c3e11bdbc578d13ce' "$HARNESS_SHA" >> PROVENANCE.txt
+          echo "$QA_SHA" > ../locked_qa_sha.txt
+
+      - name: Run exact QA APK 37-screen Android 16 semantic flow
+        id: emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: cd mini4x-runner && bash qa/mini4x_emulator_flow.sh
+
+      - name: Strictly verify 37-screen evidence
+        if: always()
+        working-directory: mini4x-runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p semantic-evidence
+          count=$(find screenshots-pass2 -name '*.png' -size +1000c 2>/dev/null | wc -l | tr -d ' ')
+          echo "$count" > semantic-evidence/RAW_SCREENSHOT_COUNT.txt
+          if [ "$count" -gt 0 ]; then python qa/build_visual_evidence.py screenshots-pass2 semantic-evidence "$count"; fi
+          cp qa_apk_sha256.txt PROVENANCE.txt pass2_progress.txt pass2_meminfo.txt pass2_gfxinfo.txt pass2_crashes.txt semantic-evidence/ 2>/dev/null || true
+          if [ -f pass2_logcat.txt ]; then
+            grep -E 'FATAL EXCEPTION|ANR in com\.mini4x\.game' pass2_logcat.txt | tail -n 300 > semantic-evidence/logcat_errors_tail.txt || true
+          fi
+          QA_SHA="$(cat ../locked_qa_sha.txt)"
+          MINI4X_LOCKED_APK_SHA256="$QA_SHA" python qa/verify_semantic_evidence.py semantic-evidence | tee semantic-evidence/strict_verification.txt
+          grep -q 'semantic_android16_evidence=PASS' semantic-evidence/strict_verification.txt
+          grep -q 'screenshots=37' semantic-evidence/strict_verification.txt
+          grep -q 'activity_launch_wait=PASS' semantic-evidence/strict_verification.txt
+          grep -q 'responsive_landscape_navigation=PASS' semantic-evidence/strict_verification.txt
+          echo 'current_semantic_evidence=PASS' | tee semantic-evidence/SEMANTIC_RESULT.txt
+
+      - name: Upload semantic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mini4x-current-semantic-${{ github.run_id }}
+          retention-days: 3
+          if-no-files-found: warn
+          path: |
+            mini4x-runner/semantic-evidence/
+            mini4x-runner/screenshots-pass2/
+            mini4x-runner/pass2_logcat.txt
