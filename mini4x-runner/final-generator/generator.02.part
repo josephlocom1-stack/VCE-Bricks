@@ -1,0 +1,155 @@
+angle((72,107,82,137),fill=skin); d.rectangle((110,107,120,137),fill=skin)
+    # accessories
+    if kind=='archer':
+        d.arc((105,93,137,142),80,280,fill=rgba('#6F4D32'),width=4)
+        d.line((121,100,121,134),fill=rgba('#DADADA'),width=1)
+    elif kind in ('defender','juggernaut'):
+        d.ellipse((60,106,87,145),fill=darken(accent,.72),outline=metal,width=3)
+    elif kind in ('swordsman','warrior','knight'):
+        d.line((116,104,137,77),fill=metal,width=5)
+        d.line((130,83,140,92),fill=rgba('#785434'),width=3)
+    elif kind=='mind_bender':
+        d.line((119,108,132,70),fill=rgba('#754F35'),width=4)
+        d.ellipse((126,64,139,77),fill=rgba('#8FE6F5'))
+    elif kind=='giant':
+        # overlay larger shoulders
+        d.ellipse((65,96,88,121),fill=cloth); d.ellipse((105,96,128,121),fill=cloth)
+    elif kind=='guerrilla':
+        d.line((111,116,138,105),fill=rgba('#74513A'),width=4)
+    elif kind=='cloak':
+        poly(d,[(78,107),(96,96),(115,108),(121,158),(71,158)],darken(accent,.7))
+    return
+
+def horse_and_rider(d,accent,knight=False):
+    draw_shadow(d,96,168,38,7)
+    horse=rgba('#A87955')
+    # horse body
+    poly(d,[(56,125),(93,112),(124,123),(98,142),(65,145)],horse)
+    poly(d,[(124,123),(138,108),(145,114),(134,134),(98,142)],lighten(horse,1.05))
+    # legs
+    for x in [67,86,111,128]:
+        d.line((x,139,x-3,165),fill=darken(horse,.7),width=6)
+    # rider torso/head
+    p=FACTIONS['asteria'] # only for skin no palette
+    skin=rgba('#E2B48A')
+    d.rectangle((86,87,104,122),fill=accent)
+    d.rounded_rectangle((84,68,106,91),radius=4,fill=skin)
+    poly(d,[(82,72),(95,62),(108,72),(105,79),(85,79)],rgba('#D5DCE3') if knight else darken(accent,.65))
+    if knight:
+        d.line((105,90,135,65),fill=rgba('#DDE3EA'),width=5)
+    else:
+        d.line((105,95,126,81),fill=rgba('#765238'),width=4)
+
+def draw_boat(d,accent,kind):
+    draw_shadow(d,96,164,40,6)
+    hull=rgba('#75513B')
+    if kind=='raft':
+        for yy in [132,139,146]:
+            d.rounded_rectangle((58,yy,134,yy+7),radius=3,fill=lighten(hull,1.05))
+        d.line((96,90,96,139),fill=darken(hull,.75),width=4)
+        poly(d,[(98,94),(128,116),(98,124)],accent)
+    else:
+        poly(d,[(48,136),(142,132),(128,158),(66,160)],hull)
+        poly(d,[(55,136),(98,118),(138,132),(95,146)],lighten(hull,1.1))
+        d.line((95,76,95,127),fill=darken(hull,.72),width=4)
+        if kind=='rammer':
+            poly(d,[(142,141),(162,146),(141,151)],rgba('#D1D8DF'))
+            poly(d,[(97,79),(129,107),(97,123)],accent)
+        elif kind=='bomber':
+            poly(d,[(97,80),(139,109),(97,124)],accent)
+            # catapult/bomb deck
+            d.ellipse((75,116,90,131),fill=rgba('#424C58'))
+        elif kind=='scout':
+            poly(d,[(97,82),(126,104),(97,117)],accent)
+            d.ellipse((105,110,114,119),fill=rgba('#BCEBFA'))
+
+def draw_catapult(d,accent):
+    draw_shadow(d,96,166,34,6)
+    wood=rgba('#805A39')
+    d.rectangle((62,133,130,147),fill=wood)
+    for x in [70,119]:
+        d.ellipse((x-12,139,x+12,163),fill=darken(wood,.72),outline=rgba('#BE9469'),width=3)
+    d.line((92,136,112,92),fill=wood,width=7)
+    d.ellipse((106,85,120,99),fill=rgba('#6E747B'))
+    d.rectangle((81,116,105,132),fill=accent)
+
+def draw_unit_sprite(faction,kind):
+    im=Image.new('RGBA',(192,192),(0,0,0,0)); d=ImageDraw.Draw(im); accent=FACTIONS[faction]['accent']
+    if kind in ('rider','knight'):
+        horse_and_rider(d,accent,kind=='knight')
+    elif kind=='catapult':
+        draw_catapult(d,accent)
+    elif kind in ('raft','rammer','bomber','scout'):
+        draw_boat(d,accent,kind)
+    elif kind=='giant':
+        # scaled larger person by drawing on temp and resizing
+        temp=Image.new('RGBA',(192,192),(0,0,0,0)); td=ImageDraw.Draw(temp); body_person(td,accent,kind)
+        crop=temp.crop((48,45,144,175)).resize((130,176),Image.Resampling.LANCZOS)
+        im.alpha_composite(crop,(31,10))
+    else:
+        body_person(d,accent,kind)
+    return im
+
+unit_kinds=['archer','bomber','catapult','cloak','defender','giant','guerrilla','juggernaut',
+            'knight','mind_bender','raft','rammer','rider','scout','swordsman','warrior']
+units_atlas=Image.new('RGBA',(1536,1728),(0,0,0,0))
+idx=0
+for fac in ['asteria','emberhold','sunspire','virelia']:
+    for kind in unit_kinds:
+        im=draw_unit_sprite(fac,kind)
+        x=(idx%8)*192; y=(idx//8)*192
+        units_atlas.alpha_composite(im,(x,y)); idx+=1
+
+# Weapon sprites last 7 in row 8
+def weapon_sprite(kind):
+    im=Image.new('RGBA',(192,192),(0,0,0,0)); d=ImageDraw.Draw(im)
+    metal=rgba('#DDE4EA'); wood=rgba('#805A3D')
+    if kind=='arrow':
+        d.line((50,140,142,52),fill=wood,width=4); poly(d,[(142,52),(127,57),(137,67)],metal)
+    elif kind=='bow':
+        d.arc((55,35,145,155),70,290,fill=wood,width=6); d.line((93,46,93,145),fill=rgba('#E8E8E8'),width=2)
+    elif kind=='catapult_arm':
+        d.line((60,140,125,55),fill=wood,width=12); d.rectangle((112,48,135,68),fill=wood)
+    elif kind=='rock':
+        poly(d,[(70,120),(65,88),(88,63),(123,72),(137,104),(113,132)],rgba('#7C858D'))
+    elif kind=='shield':
+        poly(d,[(64,59),(128,59),(133,105),(96,145),(59,105)],rgba('#4D91B8')); 
+        d.line((96,64,96,135),fill=metal,width=5)
+    elif kind=='staff':
+        d.line((80,145,110,52),fill=wood,width=6); d.ellipse((100,39,121,60),fill=rgba('#8FE6F5'))
+    elif kind=='sword':
+        d.line((65,142,126,54),fill=metal,width=8); d.line((74,125,92,139),fill=wood,width=7)
+    return im
+for kind in ['arrow','bow','catapult_arm','rock','shield','staff','sword']:
+    im=weapon_sprite(kind)
+    x=(idx%8)*192; y=(idx//8)*192
+    units_atlas.alpha_composite(im,(x,y)); idx+=1
+assert idx==71
+units_path=f'{outdir}/units.webp'
+units_atlas.save(units_path,'WEBP',lossless=True,method=6)
+
+# Tech icon atlas, 5x5
+tech_names=['aquatism','archery','chivalry','climbing','construction',
+'diplomacy','farming','fishing','forestry','free_spirit',
+'hunting','mathematics','meditation','mining','navigation',
+'organization','philosophy','ramming','riding','roads',
+'sailing','smithery','spiritualism','strategy','trade']
+
+def tech_icon(name):
+    im=Image.new('RGBA',(96,96),(0,0,0,0)); d=ImageDraw.Draw(im)
+    # circular badge
+    d.ellipse((9,9,87,87),fill=rgba('#2E738F'),outline=rgba('#7DDBE2'),width=4)
+    d.ellipse((18,18,78,78),fill=rgba('#2F8E75'))
+    c=rgba('#F1F6E9'); c2=rgba('#D9E7D8')
+    cx=48; cy=48
+    if name in ('fishing','aquatism'):
+        draw_fish(d,48,49,.52)
+    elif name in ('archery','hunting'):
+        d.arc((28,24,68,72),70,290,fill=c,width=4); d.line((46,30,46,68),fill=c,width=2); d.line((33,62,66,31),fill=c2,width=3)
+    elif name in ('chivalry','riding'):
+        # horse head
+        poly(d,[(33,62),(37,31),(50,22),(66,34),(61,57),(49,69)],c)
+        d.ellipse((51,33,56,38),fill=rgba('#2F8E75'))
+    elif name=='climbing':
+        poly(d,[(23,67),(46,27),(58,47),(68,32),(78,67)],c2)
+        poly(d,[(38,42),(46,27),(52
