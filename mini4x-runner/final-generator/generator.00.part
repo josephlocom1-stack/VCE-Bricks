@@ -1,0 +1,153 @@
+from PIL import Image, ImageDraw
+import math, os, hashlib, json, base64, random, colorsys
+import sys
+outdir=sys.argv[1] if len(sys.argv)>1 else '/tmp/mini4x_atlases_rebuilt'
+os.makedirs(outdir, exist_ok=True)
+
+# Helpers
+def rgba(hexstr, a=255):
+    hexstr=hexstr.lstrip('#')
+    return tuple(int(hexstr[i:i+2],16) for i in (0,2,4))+(a,)
+
+def lighten(c, f=1.15):
+    r,g,b,a=c
+    return (min(255,int(r*f)), min(255,int(g*f)), min(255,int(b*f)), a)
+def darken(c, f=0.82):
+    r,g,b,a=c
+    return (int(r*f),int(g*f),int(b*f),a)
+
+FACTIONS = {
+    'asteria': {'accent':rgba('#31BEEB'), 'accent2':rgba('#187EA8'), 'field':rgba('#69C86D'), 'field2':rgba('#58B963'), 'roof':rgba('#2BBCE8')},
+    'emberhold': {'accent':rgba('#EF6658'), 'accent2':rgba('#A83E36'), 'field':rgba('#73BF68'), 'field2':rgba('#60AA57'), 'roof':rgba('#E95C50')},
+    'sunspire': {'accent':rgba('#E9C442'), 'accent2':rgba('#A88A22'), 'field':rgba('#91CE5A'), 'field2':rgba('#7DB848'), 'roof':rgba('#E7BC36')},
+    'virelia': {'accent':rgba('#A56BE7'), 'accent2':rgba('#6B3EAB'), 'field':rgba('#70C56A'), 'field2':rgba('#5BAE58'), 'roof':rgba('#9E63DC')},
+}
+
+# Geometry helpers
+def poly(draw, pts, fill):
+    draw.polygon(pts, fill=fill)
+
+def iso_tile_base(im, top, side=None, water=False):
+    d=ImageDraw.Draw(im)
+    if side is None: side=darken(top,0.74)
+    # logical diamond centered at (96,104), width 112 height58, thickness 13
+    L=(40,104); T=(96,75); R=(152,104); B=(96,133)
+    # side extrusion
+    poly(d,[L,B,(96,146),(40,117)],darken(side,0.88))
+    poly(d,[B,R,(152,117),(96,146)],darken(side,0.72))
+    # 4 top facets
+    c=(96,104)
+    poly(d,[T,R,c],lighten(top,1.05))
+    poly(d,[R,B,c],top)
+    poly(d,[B,L,c],darken(top,0.96))
+    poly(d,[L,T,c],lighten(top,1.01))
+    return d
+
+def draw_shadow(d, cx=96, cy=127, rx=32, ry=8, alpha=55):
+    d.ellipse((cx-rx, cy-ry, cx+rx, cy+ry), fill=(10,20,20,alpha))
+
+def draw_tree(d,x,y,scale=1.0, foliage=rgba('#267447')):
+    trunk=rgba('#765238')
+    w=5*scale
+    d.rectangle((x-w/2,y, x+w/2,y+13*scale), fill=trunk)
+    for yy,rad in [(y-12*scale,15*scale),(y-23*scale,12*scale),(y-33*scale,8*scale)]:
+        poly(d,[(x,yy-11*scale),(x-rad,yy+10*scale),(x+rad,yy+10*scale)],darken(foliage,0.92))
+        poly(d,[(x,yy-11*scale),(x,yy+10*scale),(x+rad,yy+10*scale)],lighten(foliage,1.07))
+
+def draw_house(d,x,y,scale,accent,stone=rgba('#EEE5D4')):
+    # simple isometric house body
+    w=22*scale; h=16*scale
+    poly(d,[(x-w/2,y),(x,y-7*scale),(x+w/2,y),(x,y+7*scale)],darken(stone,0.95))
+    poly(d,[(x-w/2,y),(x,y+7*scale),(x,y+20*scale),(x-w/2,y+13*scale)],darken(stone,0.84))
+    poly(d,[(x+w/2,y),(x,y+7*scale),(x,y+20*scale),(x+w/2,y+13*scale)],darken(stone,0.72))
+    poly(d,[(x-w/2-2*scale,y-1*scale),(x,y-11*scale),(x+w/2+2*scale,y-1*scale),(x,y+8*scale)],accent)
+    # lit door/window
+    d.rectangle((x-2*scale,y+10*scale,x+2*scale,y+18*scale),fill=rgba('#6F4B38'))
+    d.rectangle((x+5*scale,y+7*scale,x+8*scale,y+10*scale),fill=rgba('#FFD77B'))
+
+def draw_mountain(d,x,y,scale=1.0):
+    rock=rgba('#7F8791')
+    for dx,dy,s in [(-20,7,.85),(8,0,1.1),(28,10,.72)]:
+        cx=x+dx*scale; base=y+dy*scale; ww=34*s*scale; hh=48*s*scale
+        peak=(cx,base-hh)
+        left=(cx-ww,base); right=(cx+ww,base)
+        mid=(cx+2*s*scale,base)
+        poly(d,[peak,left,mid],darken(rock,0.84))
+        poly(d,[peak,mid,right],lighten(rock,1.07))
+        snow=rgba('#F5FAFD')
+        poly(d,[peak,(cx-ww*.26,base-hh*.63),(cx,base-hh*.55),(cx+ww*.19,base-hh*.65)],snow)
+        poly(d,[peak,(cx+ww*.19,base-hh*.65),(cx+ww*.36,base-hh*.55),(cx,base-hh*.55)],darken(snow,.96))
+
+def draw_fish(d,x,y,scale=1.0):
+    c=rgba('#BDEFFA')
+    for dx,dy,flip in [(-20,-4,1),(7,4,-1),(26,-9,1)]:
+        cx=x+dx*scale; cy=y+dy*scale
+        d.ellipse((cx-8*scale,cy-3*scale,cx+8*scale,cy+3*scale),fill=c)
+        if flip==1: poly(d,[(cx-8*scale,cy),(cx-14*scale,cy-6*scale),(cx-14*scale,cy+6*scale)],c)
+        else: poly(d,[(cx+8*scale,cy),(cx+14*scale,cy-6*scale),(cx+14*scale,cy+6*scale)],c)
+
+def draw_windmill(d,x,y,accent):
+    body=rgba('#E4D9C2')
+    poly(d,[(x-10,y),(x+10,y),(x+7,y-36),(x-7,y-36)],body)
+    d.ellipse((x-5,y-42,x+5,y-32),fill=accent)
+    for ang in [0,math.pi/2,math.pi,3*math.pi/2]:
+        x2=x+math.cos(ang)*28; y2=y-37+math.sin(ang)*28
+        d.line((x,y-37,x2,y2),fill=rgba('#735A43'),width=4)
+        # blade quad approximate
+        ex=math.cos(ang); ey=math.sin(ang)
+        px=-ey; py=ex
+        poly(d,[(x2+px*3,y2+py*3),(x2-px*3,y2-py*3),
+                (x+ex*11-px*2,y-37+ey*11-py*2),(x+ex*11+px*2,y-37+ey*11+py*2)],rgba('#D8C6A5'))
+
+def draw_structure(d, typ, accent):
+    # all positioned around ground center
+    if typ in ('village',):
+        draw_house(d,85,101,0.72,accent); draw_house(d,109,109,0.6,accent)
+    elif typ in ('temple','forest_temple'):
+        stone=rgba('#E8E2D2')
+        for i,w in enumerate([42,34,26]):
+            y=126-i*9
+            poly(d,[(96-w/2,y),(96+w/2,y),(96+w/2-6,y-7),(96-w/2+6,y-7)],darken(stone,1-i*.03))
+        # columns
+        for x in [82,90,102,110]:
+            d.rectangle((x,84,x+4,115),fill=stone)
+        poly(d,[(78,84),(96,70),(114,84)],accent)
+        if typ=='forest_temple':
+            draw_tree(d,60,118,.55); draw_tree(d,134,120,.5)
+    elif typ=='forge':
+        d.rectangle((72,94,116,126),fill=rgba('#77695F'))
+        poly(d,[(68,95),(94,78),(121,95),(95,110)],accent)
+        d.rectangle((110,74,119,102),fill=rgba('#66564B'))
+        d.ellipse((79,109,93,123),fill=rgba('#FF8C42'))
+    elif typ=='lumber_hut':
+        draw_house(d,96,103,.9,accent,rgba('#C99E6A'))
+        for yy in [121,127]:
+            d.rectangle((58,yy,82,yy+5),fill=rgba('#835A38'))
+    elif typ=='market':
+        for x,c in [(76,rgba('#EFE4C7')),(96,rgba('#EFE4C7')),(116,rgba('#EFE4C7'))]:
+            d.rectangle((x-7,105,x+7,127),fill=c)
+            poly(d,[(x-10,105),(x,95),(x+10,105)],accent)
+    elif typ=='mine':
+        draw_mountain(d,96,124,.55)
+        d.rectangle((84,110,107,128),fill=rgba('#443E3B'))
+        for x in [80,112]:
+            d.rectangle((x,105,x+4,130),fill=rgba('#805A38'))
+        d.rectangle((78,105,118,110),fill=rgba('#805A38'))
+    elif typ=='monument':
+        for i,w in enumerate([36,28,20]):
+            d.rectangle((96-w/2,123-i*5,96+w/2,127-i*5),fill=rgba('#D9D1C4'))
+        poly(d,[(92,112),(100,112),(104,70),(88,70)],rgba('#F0E8D9'))
+        poly(d,[(88,70),(96,60),(104,70)],accent)
+    elif typ=='port':
+        # dock + warehouse
+        d.rectangle((60,110,130,117),fill=rgba('#8A633F'))
+        for x in [66,80,120]:
+            d.rectangle((x,115,x+4,133),fill=rgba('#68472E'))
+        draw_house(d,102,100,.65,accent,rgba('#D9CEB8'))
+        # tiny boat
+        poly(d,[(63,126),(85,126),(80,134),(67,134)],rgba('#754F35'))
+        poly(d,[(72,125),(72,110),(83,125)],accent)
+    elif typ=='ruin':
+        stone=rgba('#A8A49A')
+        for x,y,h in [(70,107,21),(86,99,29),(111,105,23)]:
+            d.rectangle((x,y,x+8,y+h),fill=stone
