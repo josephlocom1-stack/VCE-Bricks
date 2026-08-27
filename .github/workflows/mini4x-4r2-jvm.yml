@@ -1,0 +1,88 @@
+name: Mini4X Phase 4R.2 JVM Gate
+
+on:
+  push:
+    branches: [mini4x-public-qa-temp]
+    paths:
+      - 'mini4x-4r2/RUN'
+
+permissions:
+  contents: read
+
+jobs:
+  phase4r2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Kotlin 1.9.0
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/kotlin.zip https://github.com/JetBrains/kotlin/releases/download/v1.9.0/kotlin-compiler-1.9.0.zip
+          unzip -q /tmp/kotlin.zip -d /tmp/kotlin
+          echo "/tmp/kotlin/kotlinc/bin" >> "$GITHUB_PATH"
+      - name: Run Phase 4R.2 baseline and candidate gate
+        run: |
+          set -euo pipefail
+          exec > >(tee phase4r2-results.txt) 2>&1
+          SRC="$GITHUB_WORKSPACE/mini4x-4r2/sim"
+          HAR="$GITHUB_WORKSPACE/mini4x-4r2/harness"
+          rm -rf /tmp/m4x-base /tmp/m4x-fixed
+          cp -a "$SRC" /tmp/m4x-base
+          cp -a "$SRC" /tmp/m4x-fixed
+
+          test "$(git hash-object "$SRC/Model.kt")" = 6bd15026c113180715886b23e5de64b50518d576
+          test "$(git hash-object "$SRC/CombatRules.kt")" = 5b16516d5716f184b00c42dc240fb72236a857ed
+          test "$(git hash-object "$SRC/Commands.kt")" = 0968668bcb4e58ef4edd54a3b11a26f16dd205fb
+          test "$(git hash-object "$SRC/LegalCommandGenerator.kt")" = 566458472f643671fc1f4b2c4a51b304971d660d
+          test "$(git hash-object "$SRC/MovementRules.kt")" = 4c8c4bf0887c6cc2fd2ad8e88ff45129a7b3a850
+          echo source_identity_core=PASS
+
+          kotlinc /tmp/m4x-base/*.kt "$HAR"/*.kt -d /tmp/base.jar
+          echo baseline_compile=PASS
+
+          kotlin -classpath /tmp/base.jar com.example.mini4x.research.SimulationEdgeCaseFixtures | tee /tmp/base-edge.txt
+          grep -q 'convert_stale_support=true' /tmp/base-edge.txt
+          grep -q 'elimination_stale_support=true' /tmp/base-edge.txt
+          grep -q 'elimination_stale_siege=true' /tmp/base-edge.txt
+          grep -q 'peace_stale_siege=true' /tmp/base-edge.txt
+          grep -q 'score30_winner=1' /tmp/base-edge.txt
+          grep -q 'weekly20_winner=1' /tmp/base-edge.txt
+
+          kotlin -classpath /tmp/base.jar com.example.mini4x.research.CapitalOwnershipSemanticsHarness | tee /tmp/base-capital.txt
+          grep -q 'captured_capital_resolves=true' /tmp/base-capital.txt
+
+          kotlin -classpath /tmp/base.jar com.example.mini4x.research.EliminationScoreIdempotenceHarness | tee /tmp/base-idempotence.txt
+          grep -q 'score_changed_second_pass=true' /tmp/base-idempotence.txt
+
+          kotlin -classpath /tmp/base.jar com.example.mini4x.research.LostCapitalRuinPopulationHarness | tee /tmp/base-ruin.txt
+          grep -q 'captured_capital_population_delta=3' /tmp/base-ruin.txt
+          grep -q 'owned_city_population_delta=0' /tmp/base-ruin.txt
+          echo phase4r2_baseline_reproduction=PASS
+
+          python mini4x-4r2/patch_4r2.py /tmp/m4x-fixed
+          kotlinc /tmp/m4x-fixed/*.kt "$HAR"/*.kt -d /tmp/fixed.jar
+          echo candidate_compile=PASS
+
+          kotlin -classpath /tmp/fixed.jar com.example.mini4x.research.SimulationEdgeCaseFixtures expect-clean
+          kotlin -classpath /tmp/fixed.jar com.example.mini4x.research.CapitalOwnershipSemanticsHarness expect-owned
+          kotlin -classpath /tmp/fixed.jar com.example.mini4x.research.EliminationScoreIdempotenceHarness expect-idempotent
+          kotlin -classpath /tmp/fixed.jar com.example.mini4x.research.LostCapitalRuinPopulationHarness expect-owned-fallback
+          echo targeted_integrity_repairs=PASS
+
+          kotlin -classpath /tmp/fixed.jar com.example.mini4x.research.SimulationFuzzHarness 12 400
+          kotlin -classpath /tmp/fixed.jar com.example.mini4x.research.LegalCommandBranchFuzzHarness 10 160 4
+          kotlin -classpath /tmp/fixed.jar com.example.mini4x.research.DerivedStateFixedPointFuzzHarness 16 500
+          kotlin -classpath /tmp/fixed.jar com.example.mini4x.research.SaveResumeEquivalenceHarness 8 300
+          echo phase4r2_sim_integrity=PASS
+      - name: Preserve JVM gate result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mini4x-phase4r2-jvm-result
+          path: phase4r2-results.txt
+          retention-days: 7
