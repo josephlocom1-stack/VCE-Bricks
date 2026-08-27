@@ -81,6 +81,7 @@ object TechnologyCatalog {
         val tech = get(techId)
         if (tech.requires == null) return true
         if (tech.requires in p.technologies) return true
+        // Backward research: if a faction starts with a later technology, its ancestors remain researchable.
         return p.startingTechnologies.any { owned -> isAncestor(techId, owned) }
     }
 }
@@ -125,10 +126,30 @@ object UnitCatalog {
 
 object FactionCatalog {
     val all: List<FactionDefinition> = listOf(
-        FactionDefinition(id="asteria", displayName="Asteria", initialStars=5, initialCityLevel=1, startingTechnology=setOf("organization"), startingUnit=UnitKind.WARRIOR, resourceMultipliers=mapOf(Resource.FRUIT to 2.0), terrainMultipliers=mapOf(Terrain.FOREST to 1.05)),
-        FactionDefinition(id="sunspire", displayName="Sunspire", initialStars=6, initialCityLevel=1, startingTechnology=setOf("riding"), startingUnit=UnitKind.RIDER, terrainMultipliers=mapOf(Terrain.FOREST to .45), resourceMultipliers=mapOf(Resource.CROP to 1.25)),
-        FactionDefinition(id="virelia", displayName="Virelia", initialStars=7, initialCityLevel=1, startingTechnology=setOf("hunting"), startingUnit=UnitKind.ARCHER, terrainMultipliers=mapOf(Terrain.FOREST to 1.55), resourceMultipliers=mapOf(Resource.ANIMAL to 1.5)),
-        FactionDefinition(id="emberhold", displayName="Emberhold", initialStars=7, initialCityLevel=1, startingTechnology=setOf("climbing"), startingUnit=UnitKind.WARRIOR, terrainMultipliers=mapOf(Terrain.MOUNTAIN to 1.5), resourceMultipliers=mapOf(Resource.ORE to 1.5))
+        FactionDefinition(
+            id="asteria", displayName="Asteria", initialStars=5, initialCityLevel=1,
+            startingTechnology=setOf("organization"), startingUnit=UnitKind.WARRIOR,
+            resourceMultipliers=mapOf(Resource.FRUIT to 2.0),
+            terrainMultipliers=mapOf(Terrain.FOREST to 1.05)
+        ),
+        FactionDefinition(
+            id="sunspire", displayName="Sunspire", initialStars=6, initialCityLevel=1,
+            startingTechnology=setOf("riding"), startingUnit=UnitKind.RIDER,
+            terrainMultipliers=mapOf(Terrain.FOREST to .45),
+            resourceMultipliers=mapOf(Resource.CROP to 1.25)
+        ),
+        FactionDefinition(
+            id="virelia", displayName="Virelia", initialStars=7, initialCityLevel=1,
+            startingTechnology=setOf("hunting"), startingUnit=UnitKind.ARCHER,
+            terrainMultipliers=mapOf(Terrain.FOREST to 1.55),
+            resourceMultipliers=mapOf(Resource.ANIMAL to 1.5)
+        ),
+        FactionDefinition(
+            id="emberhold", displayName="Emberhold", initialStars=7, initialCityLevel=1,
+            startingTechnology=setOf("climbing"), startingUnit=UnitKind.WARRIOR,
+            terrainMultipliers=mapOf(Terrain.MOUNTAIN to 1.5),
+            resourceMultipliers=mapOf(Resource.ORE to 1.5)
+        )
     )
     private val byId = all.associateBy { it.id }
     operator fun get(id: String) = byId[id] ?: error("Unknown faction $id")
