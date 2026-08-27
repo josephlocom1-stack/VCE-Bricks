@@ -26,7 +26,7 @@ d=one(d,'val doomed=state.ownedUnits(pid).toList()\n                for(u in doo
 d=one(d,'winner=state.players.indices.maxByOrNull { state.score[it] }; reason="30-turn score"','winner=state.players.indices.filter { !state.players[it].eliminated }.maxByOrNull { state.score[it] }; reason="30-turn score"','score30 living winner')
 d=one(d,'winner=state.players.indices.maxByOrNull { state.score[it] }; reason="20-turn weekly challenge"','winner=state.players.indices.filter { !state.players[it].eliminated }.maxByOrNull { state.score[it] }; reason="20-turn weekly challenge"','weekly living winner')
 
-d=one(d,'recalculateBuildingPopulation(state)\n        recalculateConnections(state)\n        recalculateCityUpgrades(state,events)\n        recalculateScores(state,events)\n        checkElimination(state,events)\n        checkVictory(state,events)',
+d=one(d,'refreshSieges(state)\n        recalculateBuildingPopulation(state)\n        recalculateConnections(state)\n        recalculateCityUpgrades(state,events)\n        recalculateScores(state,events)\n        checkElimination(state,events)\n        checkVictory(state,events)',
 '''recalculateBuildingPopulation(state)\n        recalculateConnections(state)\n        recalculateCityUpgrades(state,events)\n        checkElimination(state,events)\n        refreshSieges(state)\n        recalculateScores(state,events)\n        checkVictory(state,events)''','elimination before scoring')
 
 model.write_text(m);derived.write_text(d);command.write_text(c)
