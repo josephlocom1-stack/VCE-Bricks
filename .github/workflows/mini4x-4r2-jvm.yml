@@ -42,6 +42,26 @@ jobs:
           test "$(git hash-object "$SRC/MovementRules.kt")" = 4c8c4bf0887c6cc2fd2ad8e88ff45129a7b3a850
           echo source_identity_core=PASS
 
+          # Some large public relay files were whitespace-compacted during transfer.
+          # Restore only Kotlin lexical separators; this does not change simulation semantics.
+          python - <<'PY'
+          from pathlib import Path
+          for root in (Path('/tmp/m4x-base'), Path('/tmp/m4x-fixed')):
+              p=root/'CommandEngine.kt'
+              s=p.read_text()
+              assert 'return"' in s
+              s=s.replace('return"','return "').replace('"else','" else')
+              p.write_text(s)
+
+              p=root/'MapGenerator.kt'
+              s=p.read_text()
+              old='val fac=FactionCatalog[config.factionIds[t.climateOwner]]; fun mult(r:Resource)=fac.resourceMultipliers[r]?:1.0; val r=hash(config.seed,x,y,501)'
+              assert s.count(old)==1
+              new='val fac=FactionCatalog[config.factionIds[t.climateOwner]]\n            fun mult(r:Resource)=fac.resourceMultipliers[r]?:1.0\n            val r=hash(config.seed,x,y,501)'
+              p.write_text(s.replace(old,new,1))
+          print('relay_format_normalization=PASS')
+          PY
+
           kotlinc /tmp/m4x-base/*.kt "$HAR"/*.kt -d /tmp/base.jar
           echo baseline_compile=PASS
 
