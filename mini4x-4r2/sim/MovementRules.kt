@@ -6,7 +6,7 @@ object MovementRules {
     data class StepState(val pos: Pos, val naval: Boolean)
     data class MovementPath(val path: List<Pos>, val halfCost: Int, val finalNaval: Boolean, val embarked: Boolean, val disembarked: Boolean)
 
-    private data class Node(val state: StepState, val cost: Int, val path: List<Pos>, val terminal: Boolean, val embarked:Boolean, val disembarked:Boolean)
+    private data class Node(val state: StepState,val cost:Int,val path:List<Pos>,val terminal:Boolean,val embarked:Boolean,val disembarked:Boolean)
 
     fun isNaval(kind: UnitKind)=kind in setOf(UnitKind.RAFT,UnitKind.RAMMER,UnitKind.SCOUT,UnitKind.BOMBER,UnitKind.JUGGERNAUT)
 
@@ -49,6 +49,8 @@ object MovementRules {
         val skills=UnitCatalog.skills(unit)
         val currentlyNaval=isNaval(unit.kind)
         val baseMove=UnitCatalog[unit.kind].movement
+        // A land unit embarks by ENTERING a friendly Port water tile. It does not need to
+        // somehow begin its turn on water. Once embarked, later moves use the naval wrapper's movement.
         val allowance=baseMove*2
         val pq=PriorityQueue<Node>(compareBy<Node>{it.cost}.thenBy{it.path.size})
         val start=StepState(unit.pos,currentlyNaval)
