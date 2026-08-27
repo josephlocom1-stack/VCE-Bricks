@@ -6,7 +6,7 @@ object MovementRules {
     data class StepState(val pos: Pos, val naval: Boolean)
     data class MovementPath(val path: List<Pos>, val halfCost: Int, val finalNaval: Boolean, val embarked: Boolean, val disembarked: Boolean)
 
-    private data class Node(val state: StepState,val cost:Int,val path:List<Pos>,val terminal:Boolean,val embarked:Boolean,val disembarked:Boolean)
+    private data class Node(val state: StepState, val cost: Int, val path: List<Pos>, val terminal: Boolean, val embarked:Boolean, val disembarked:Boolean)
 
     fun isNaval(kind: UnitKind)=kind in setOf(UnitKind.RAFT,UnitKind.RAMMER,UnitKind.SCOUT,UnitKind.BOMBER,UnitKind.JUGGERNAUT)
 
