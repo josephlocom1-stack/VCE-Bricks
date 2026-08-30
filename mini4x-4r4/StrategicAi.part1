@@ -1,0 +1,175 @@
+package com.example.mini4x.ai
+
+import com.example.mini4x.sim.*
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
+
+enum class StrategicGoal { DEFEND, EXPAND, ATTACK, ECONOMY, TECH, SCORE }
+
+data class AiPlan(val goal:StrategicGoal,val targetTech:String?=null,val reserveStars:Int=0,val threatenedCityIds:Set<Int> = emptySet())
+
+object StrategicAi {
+    fun chooseCommand(state:SimState,playerId:Int=state.activePlayer):Command {
+        require(playerId==state.activePlayer)
+        val plan=plan(state,playerId)
+        // Immediate city survival is a tactical obligation, not an economy preference. When an
+        // adjacent hostile unit can take a threatened city, train the best legal blocker before
+        // spending stars or moving elsewhere. This preemption is intentionally narrow: only a
+        // DEFEND plan, an actually threatened owned city, and an adjacent hostile unit qualify.
+        if(plan.goal==StrategicGoal.DEFEND) {
+            for(cityId in plan.threatenedCityIds) {
+                val city=state.city(cityId) ?: continue
+                val adjacentHostile=state.units.any { enemy ->
+                    enemy.owner!=playerId && state.diplomacy[playerId][enemy.owner]!=Relation.PEACE &&
+                        enemy.pos.chebyshev(city.pos)<=1
+                }
+                if(adjacentHostile) {
+                    for(kind in listOf(UnitKind.DEFENDER,UnitKind.SWORDSMAN,UnitKind.WARRIOR)) {
+                        val train=TrainUnit(playerId,city.id,kind)
+                        if(CommandEngine.validate(state,train)==null) return train
+                    }
+                }
+            }
+        }
+        // Strategic diplomacy transition: once conquest/attack mode is chosen, peace must not
+        // become a permanent local optimum just because breaking it consumes this turn.
+        if(plan.goal==StrategicGoal.ATTACK && "strategy" in state.players[playerId].technologies) {
+            // Never break peace while our units are still inside the ally's territory: the rules
+            // delete those units immediately. Reposition first, then consider war on a later action.
+            val peaceTargets=state.players.indices.filter { other ->
+                other!=playerId && !state.players[other].eliminated && state.diplomacy[playerId][other]==Relation.PEACE &&
+                    state.ownedUnits(playerId).none { state.tile(it.pos)?.territoryOwner==other }
+            }
+            if(peaceTargets.isNotEmpty() && state.roundNumber>=12) {
+                val target=peaceTargets.minByOrNull { other -> state.ownedCities(other).size*20 + militaryPower(state,other).toInt() }
+                if(target!=null && militaryPower(state,playerId)>=militaryPower(state,target)*.90)
+                    BreakPeace(playerId,target).let { if(CommandEngine.validate(state,it)==null) return it }
+            }
+        }
+        val candidates=candidates(state,playerId,plan)
+        if(candidates.isEmpty()) return EndTurn(playerId)
+        val difficulty=state.difficulty.coerceIn(1,4)
+        val beam=when(difficulty){1->4;2->6;3->9;else->12}
+        val second=when(difficulty){1->1;2->2;3->4;else->6}
+        val ranked=candidates.map { it to quickCommandScore(state,playerId,it,plan) }
+            .sortedWith(compareByDescending<Pair<Command,Double>>{it.second}.thenBy{stableTie(state,it.first)})
+            .take(beam)
+        var best:Command=EndTurn(playerId); var bestValue=Double.NEGATIVE_INFINITY
+        for((cmd,heur) in ranked) {
+            val sim=state.deepCopy(); val r=CommandEngine.execute(sim,cmd); if(!r.accepted) continue
+            var value=evaluate(sim,playerId,plan)+heur*.12
+            if(second>0 && !sim.finished && sim.activePlayer==playerId && cmd !is EndTurn) {
+                val next=candidates(sim,playerId,plan).map { it to quickCommandScore(sim,playerId,it,plan) }
+                    .sortedByDescending{it.second}.take(second)
+                if(next.isNotEmpty()) {
+                    value += .38 * next.maxOf { (c2,h2) ->
+                        val s2=sim.deepCopy(); if(CommandEngine.execute(s2,c2).accepted) evaluate(s2,playerId,plan)+h2*.08 else Double.NEGATIVE_INFINITY
+                    }
+                }
+            }
+            if(value>bestValue+1e-6 || (abs(value-bestValue)<1e-6 && stableTie(state,cmd)<stableTie(state,best))) {bestValue=value;best=cmd}
+        }
+        return best
+    }
+
+    fun playTurn(state:SimState,playerId:Int=state.activePlayer,maxActions:Int=96):List<SimEvent> {
+        val events=mutableListOf<SimEvent>();var actions=0
+        while(!state.finished && state.activePlayer==playerId && actions++<maxActions) {
+            val c=chooseCommand(state,playerId);val r=CommandEngine.execute(state,c);events+=r.events
+            if(!r.accepted || c is EndTurn) break
+        }
+        if(!state.finished && state.activePlayer==playerId) events += CommandEngine.execute(state,EndTurn(playerId)).events
+        return events
+    }
+
+    fun plan(state:SimState,pid:Int):AiPlan {
+        val ownPower=militaryPower(state,pid)
+        val enemyPower=state.players.indices.filter{it!=pid&&!state.players[it].eliminated}.sumOf{militaryPower(state,it)}.coerceAtLeast(1.0)
+        // Critical local danger preempts global aggression. This check happens before any
+        // strong-empire ATTACK fast path so a winning empire cannot abandon its capital.
+        val urgentThreatened=state.ownedCities(pid).filter { city -> threatAt(state,pid,city.pos)>8.5 }.map{it.id}.toSet()
+        val urgentCapitalId=state.capital(pid)?.id
+        val urgentMaxThreat=state.ownedCities(pid).maxOfOrNull { threatAt(state,pid,it.pos) } ?: 0.0
+        val urgentCritical=(urgentCapitalId!=null && urgentCapitalId in urgentThreatened) || urgentMaxThreat>13.0
+        if(urgentThreatened.isNotEmpty() && urgentCritical)
+            return AiPlan(StrategicGoal.DEFEND,targetTech=bestTechTarget(state,pid,StrategicGoal.DEFEND),reserveStars=4,threatenedCityIds=urgentThreatened)
+        val ownCities=state.ownedCities(pid)
+        val threatened=ownCities.filter { city -> threatAt(state,pid,city.pos)>8.5 }.map{it.id}.toSet()
+        val capitalId=state.capital(pid)?.id
+        val maxLocalThreat=ownCities.maxOfOrNull { threatAt(state,pid,it.pos) } ?: 0.0
+        val criticalThreat=(capitalId!=null && capitalId in threatened) || maxLocalThreat>13.0
+        if(threatened.isNotEmpty() && (criticalThreat || ownCities.size<=2 || ownPower<enemyPower*.65))
+            return AiPlan(StrategicGoal.DEFEND,targetTech=bestTechTarget(state,pid,StrategicGoal.DEFEND),reserveStars=4,threatenedCityIds=threatened)
+        val villages=discoveredVillages(state,pid)
+        val round=state.roundNumber
+        val goal=when {
+            state.gameMode in setOf(GameMode.SCORE_30,GameMode.WEEKLY_20) && round>12 -> StrategicGoal.SCORE
+            villages.isNotEmpty() && state.ownedCities(pid).size<max(4,state.size/4) -> StrategicGoal.EXPAND
+            enemyCitiesDiscovered(state,pid).isNotEmpty() && (ownPower>enemyPower*.72 || state.ownedCities(pid).size>=5) && round>5 -> StrategicGoal.ATTACK
+            state.players[pid].technologies.size < min(8,2+round/3) && state.ownedCities(pid).size<5 -> StrategicGoal.TECH
+            DerivedState.totalIncome(state,pid) < max(5,state.ownedCities(pid).size*3) -> StrategicGoal.ECONOMY
+            else -> StrategicGoal.ATTACK
+        }
+        val tech=bestTechTarget(state,pid,goal)
+        val reserve=tech?.let{TechnologyCatalog.researchCost(state,pid,it)}?:0
+        return AiPlan(goal,tech,reserve,threatened)
+    }
+
+    private fun discoveredVillages(state:SimState,pid:Int)=state.discoveredTiles[pid].filter{state.tile(it)?.village==true}
+    private fun enemyCitiesDiscovered(state:SimState,pid:Int)=state.cities.filter{it.owner!=pid && it.pos in state.discoveredTiles[pid]}
+
+    private fun bestTechTarget(state:SimState,pid:Int,goal:StrategicGoal):String? {
+        val legal=TechnologyCatalog.all.filter { TechnologyCatalog.canResearch(state,pid,it.id) }
+        if(legal.isEmpty()) return null
+        fun value(t:Technology):Double {
+            var v=when(t.id) {
+                "organization"->18.0;"hunting"->15.0;"fishing"->14.0;"riding"->14.0;"climbing"->10.0
+                "roads"->20.0;"farming"->18.0;"forestry"->16.0;"archery"->16.0;"strategy"->15.0
+                "mathematics"->21.0;"smithery"->20.0;"chivalry"->23.0;"trade"->20.0;"navigation"->18.0;"diplomacy"->17.0;"philosophy"->21.0
+                else->12.0
+            }
+            if(goal==StrategicGoal.DEFEND && t.id in setOf("strategy","archery","smithery")) v+=12
+            if(goal==StrategicGoal.ATTACK && t.id in setOf("riding","archery","smithery","mathematics","chivalry")) v+=12
+            if(goal==StrategicGoal.EXPAND && t.id in setOf("riding","roads","fishing","sailing")) v+=11
+            if(goal in setOf(StrategicGoal.ECONOMY,StrategicGoal.SCORE) && t.id in setOf("organization","farming","forestry","roads","trade","philosophy")) v+=10
+            val terrainCounts=state.discoveredTiles[pid].mapNotNull(state::tile).groupingBy{it.terrain}.eachCount()
+            val resources=state.discoveredTiles[pid].mapNotNull(state::tile).mapNotNull{it.resource}.groupingBy{it}.eachCount()
+            if(t.id=="climbing") v+=(terrainCounts[Terrain.MOUNTAIN]?:0)*.35
+            if(t.id=="fishing") v+=(resources[Resource.FISH]?:0)*.8
+            if(t.id=="hunting") v+=(resources[Resource.ANIMAL]?:0)*.8
+            if(t.id=="organization") v+=(resources[Resource.FRUIT]?:0)*.8
+            if(t.id=="farming") v+=(resources[Resource.CROP]?:0)*.8
+            if(t.id=="mining") v+=(resources[Resource.ORE]?:0)*.8
+            v-=TechnologyCatalog.researchCost(state,pid,t.id)*.45
+            return v
+        }
+        return legal.maxByOrNull(::value)?.id
+    }
+
+    private fun candidates(state:SimState,pid:Int,plan:AiPlan):List<Command> {
+        val out=mutableListOf<Command>()
+        state.ownedCities(pid).forEach { out+=LegalCommandGenerator.forCity(state,it) }
+        val enemyCities=enemyCitiesDiscovered(state,pid)
+        val villages=discoveredVillages(state,pid)
+        fun unitPriority(u:UnitState):Int {
+            if(u.captureReadyOnRound!=null && state.roundNumber>=u.captureReadyOnRound!!) return -10000
+            val ec=enemyCities.minOfOrNull{it.pos.chebyshev(u.pos)}?:99
+            val vg=villages.minOfOrNull{it.chebyshev(u.pos)}?:99
+            val frontier=u.pos.neighbours8().count{state.inBounds(it)&&it !in state.discoveredTiles[pid]}
+            return when(plan.goal){
+                StrategicGoal.ATTACK -> ec*20-frontier
+                StrategicGoal.EXPAND -> vg*20-frontier*5
+                StrategicGoal.DEFEND -> plan.threatenedCityIds.mapNotNull(state::city).minOfOrNull{it.pos.chebyshev(u.pos)}?.times(20)?:1000
+                else -> minOf(ec,vg)*10-frontier*2
+            }
+        }
+        state.ownedUnits(pid).filter{!it.tookAction || (!it.moved || !it.attacked)}.sortedBy(::unitPriority).take(10).forEach { out+=LegalCommandGenerator.forUnit(state,it) }
+        val developmentTiles=state.discoveredTiles[pid].asSequence().mapNotNull(state::tile).filter{it.territoryOwner==pid}
+            .sortedByDescending{t -> (if(t.resource!=null)100 else 0)+(if(t.improvement==null)20 else 0)+(if(t.cityId!=null)10 else 0)}.take(30)
+        for(t in developmentTiles) {
+            val p=t.pos
+            if(t.resource in setOf(Resource.FRUIT,Resource.ANIMAL,Resource.FISH)) out+=HarvestResource(pid,p)
+            if(t.resource==Resource.CROP) out+=BuildImprovement(pid,p,Improvement.FARM)
+            if(t.resource==Resource.ORE) out+=BuildImprovement(pid,p,Improvement.MINE)
+            if(t.terrain==Terrain.FOREST && t.improvement==null) out+=BuildImprovement(pid,p,Improvement.LUMBER_HUT)
