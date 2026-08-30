@@ -4,7 +4,7 @@ on:
   push:
     branches: [mini4x-public-qa-temp]
     paths:
-      - 'mini4x-4r4/RUN2'
+      - 'mini4x-4r4/RUN3'
 
 permissions:
   contents: read
@@ -45,6 +45,7 @@ jobs:
           root=Path('/tmp/m4x')
           p=root/'CommandEngine.kt';s=p.read_text();assert 'return"' in s;s=s.replace('return"','return "').replace('"else','" else');p.write_text(s)
           p=root/'MapGenerator.kt';s=p.read_text();old='val fac=FactionCatalog[config.factionIds[t.climateOwner]]; fun mult(r:Resource)=fac.resourceMultipliers[r]?:1.0; val r=hash(config.seed,x,y,501)';assert s.count(old)==1;new='val fac=FactionCatalog[config.factionIds[t.climateOwner]]\n            fun mult(r:Resource)=fac.resourceMultipliers[r]?:1.0\n            val r=hash(config.seed,x,y,501)';p.write_text(s.replace(old,new,1))
+          ai=Path('/tmp/ai/StrategicAi.kt');a=ai.read_text();marker='\nobject BaselineAi {';assert marker in a;ai.write_text(a.split(marker,1)[0].rstrip()+'\n')
           print('relay_format_normalization=PASS')
           PY
 
