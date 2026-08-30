@@ -65,9 +65,11 @@ object LakesThresholdPropertyHarness {
     private data class ReachNode(val pos: Pos, val cost: Int, val terminal: Boolean)
 
     /**
-     * Terrain-aware one-turn opening envelope using the current production movement costs.
+     * Terrain-aware one-turn opening envelope using current production movement costs.
      * Starting factions have no Fishing/Port, so water is intentionally not an opening path.
-     * Occupied tiles remain blocked; rough terrain can be entered but terminates continuation.
+     * Enemy-occupied tiles remain blocked; a player's own starting-unit marker must not become
+     * a permanent obstacle when exploring alternate later-turn positions in this opportunity envelope.
+     * Rough terrain can be entered but terminates continuation for non-CREEP units.
      */
     private fun oneTurnEnds(state: SimState, playerId: Int, kind: UnitKind, start: Pos): Set<Pos> {
         val player = state.players[playerId]
@@ -88,7 +90,8 @@ object LakesThresholdPropertyHarness {
                 val target = state.tile(next)!!
                 if (isWater(target.terrain)) continue
                 if (target.terrain == Terrain.MOUNTAIN && "climbing" !in player.technologies && !creep) continue
-                if (target.occupantUnitId != null && next != start) continue
+                val occupant = target.occupantUnitId?.let(state::unit)
+                if (occupant != null && occupant.owner != playerId) continue
                 val nextCost = node.cost + edgeCost(state, playerId, from, target)
                 if (nextCost > allowance) continue
                 val terminal = !creep && target.terrain in setOf(Terrain.FOREST, Terrain.MOUNTAIN)
