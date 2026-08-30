@@ -1,0 +1,81 @@
+name: Mini4X Phase 4R.3 Save Hardening JVM Gate
+
+on:
+  push:
+    branches: [mini4x-public-qa-temp]
+    paths:
+      - 'mini4x-4r3/RUN'
+
+permissions:
+  contents: read
+
+jobs:
+  phase4r3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Kotlin 1.9.0
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/kotlin.zip https://github.com/JetBrains/kotlin/releases/download/v1.9.0/kotlin-compiler-1.9.0.zip
+          unzip -q /tmp/kotlin.zip -d /tmp/kotlin
+          echo "/tmp/kotlin/kotlinc/bin" >> "$GITHUB_PATH"
+      - name: Run Phase 4R.3 save/corruption gate
+        run: |
+          set -euo pipefail
+          exec > >(tee phase4r3-results.txt) 2>&1
+          SRC="$GITHUB_WORKSPACE/mini4x-4r2/sim"
+          HAR="$GITHUB_WORKSPACE/mini4x-4r2/harness"
+          rm -rf /tmp/m4x
+          cp -a "$SRC" /tmp/m4x
+
+          # Same lexical-only relay normalization proven in Phase 4R.2 run 33025811240.
+          python - <<'PY'
+          from pathlib import Path
+          root=Path('/tmp/m4x')
+          p=root/'CommandEngine.kt';s=p.read_text();assert 'return"' in s;s=s.replace('return"','return "').replace('"else','" else');p.write_text(s)
+          p=root/'MapGenerator.kt';s=p.read_text();old='val fac=FactionCatalog[config.factionIds[t.climateOwner]]; fun mult(r:Resource)=fac.resourceMultipliers[r]?:1.0; val r=hash(config.seed,x,y,501)';assert s.count(old)==1;new='val fac=FactionCatalog[config.factionIds[t.climateOwner]]\n            fun mult(r:Resource)=fac.resourceMultipliers[r]?:1.0\n            val r=hash(config.seed,x,y,501)';p.write_text(s.replace(old,new,1))
+          print('relay_format_normalization=PASS')
+          PY
+
+          python mini4x-4r2/patch_4r2.py /tmp/m4x
+          python mini4x-4r3/patch_4r3.py /tmp/m4x
+
+          kotlinc /tmp/m4x/*.kt \
+            "$HAR/SimInvariantAudit.kt" \
+            "$HAR/SimulationEdgeCaseFixtures.kt" \
+            "$HAR/CapitalOwnershipSemanticsHarness.kt" \
+            "$HAR/EliminationScoreIdempotenceHarness.kt" \
+            "$HAR/LostCapitalRuinPopulationHarness.kt" \
+            "$HAR/SimulationFuzzHarness.kt" \
+            "$HAR/LegalCommandBranchFuzzHarness.kt" \
+            "$HAR/DerivedStateFixedPointFuzzHarness.kt" \
+            "$HAR/SaveResumeEquivalenceHarness.kt" \
+            mini4x-4r3/SaveCorruptionHardeningHarness.kt \
+            -d /tmp/phase4r3.jar
+          echo phase4r3_compile=PASS
+
+          kotlin -classpath /tmp/phase4r3.jar com.example.mini4x.research.SaveCorruptionHardeningHarness
+          kotlin -classpath /tmp/phase4r3.jar com.example.mini4x.research.SimulationEdgeCaseFixtures expect-clean
+          kotlin -classpath /tmp/phase4r3.jar com.example.mini4x.research.CapitalOwnershipSemanticsHarness expect-owned
+          kotlin -classpath /tmp/phase4r3.jar com.example.mini4x.research.EliminationScoreIdempotenceHarness expect-idempotent
+          kotlin -classpath /tmp/phase4r3.jar com.example.mini4x.research.LostCapitalRuinPopulationHarness expect-owned-fallback
+          echo phase4r2_promoted_targeted_regression=PASS
+
+          kotlin -classpath /tmp/phase4r3.jar com.example.mini4x.research.SimulationFuzzHarness 12 400
+          kotlin -classpath /tmp/phase4r3.jar com.example.mini4x.research.LegalCommandBranchFuzzHarness 10 160 4
+          kotlin -classpath /tmp/phase4r3.jar com.example.mini4x.research.DerivedStateFixedPointFuzzHarness 16 500
+          kotlin -classpath /tmp/phase4r3.jar com.example.mini4x.research.SaveResumeEquivalenceHarness 8 300
+          echo phase4r3_save_hardening=PASS
+      - name: Preserve JVM gate result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mini4x-phase4r3-jvm-result
+          path: phase4r3-results.txt
+          retention-days: 7
