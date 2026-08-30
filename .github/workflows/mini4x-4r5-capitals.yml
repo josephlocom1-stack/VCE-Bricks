@@ -80,7 +80,7 @@ jobs:
           kotlinc /tmp/cap-candidate/*.kt "$AUDIT" "$HAR" -d /tmp/cap-candidate.jar
           echo phase4r5_capitals_compile=PASS
 
-          SEEDS="${MINI4X_CAPITAL_SEEDS:-30}"
+          SEEDS="${MINI4X_CAPITAL_SEEDS:-60}"
           kotlin -classpath /tmp/cap-base.jar com.example.mini4x.research.BalancedCapitalCandidateHarness baseline "$SEEDS" | tee /tmp/cap-base.log
           kotlin -classpath /tmp/cap-candidate.jar com.example.mini4x.research.BalancedCapitalCandidateHarness candidate "$SEEDS" | tee /tmp/cap-candidate.log
           grep -Fq 'balanced_capital_harness=PASS mode=baseline' /tmp/cap-base.log
@@ -113,7 +113,7 @@ jobs:
           assert len(base)==36 and set(base)==set(cand), (len(base),len(cand))
           for key in sorted(base):
               b=base[key];c=cand[key]
-              # Predeclared geometry-improvement bounds.
+              # Paired geometry-improvement bounds on the identical 60-seed corpus.
               assert c['cv'] <= b['cv']*0.80 + 1e-9, (key,'cv',b['cv'],c['cv'])
               assert c['spread'] <= b['spread']*0.50 + 1e-9, (key,'spread',b['spread'],c['spread'])
               # Broad no-regression bounds for topology and first-three-turn opportunity.
