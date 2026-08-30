@@ -1,0 +1,140 @@
+name: Mini4X Phase 4R.5 Balanced Capitals Gate
+
+on:
+  push:
+    branches: [mini4x-public-qa-temp]
+    paths:
+      - 'mini4x-4r5/RUN_CAPITALS'
+
+permissions:
+  contents: read
+
+jobs:
+  phase4r5-capitals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Kotlin 1.9.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/kotlin.zip https://github.com/JetBrains/kotlin/releases/download/v1.9.0/kotlin-compiler-1.9.0.zip
+          unzip -q /tmp/kotlin.zip -d /tmp/kotlin
+          echo "/tmp/kotlin/kotlinc/bin" >> "$GITHUB_PATH"
+      - name: Verify isolated balanced-capital candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          exec > >(tee phase4r5-capitals-results.txt) 2>&1
+          rm -rf /tmp/cap-base /tmp/cap-candidate
+          cp -a mini4x-4r2/sim /tmp/cap-base
+          cp -a mini4x-4r2/sim /tmp/cap-candidate
+
+          python - <<'PY'
+          from pathlib import Path
+          for root_name in ('/tmp/cap-base','/tmp/cap-candidate'):
+              root=Path(root_name)
+              p=root/'CommandEngine.kt';s=p.read_text();assert 'return"' in s
+              p.write_text(s.replace('return"','return "').replace('"else','" else'))
+              p=root/'MapGenerator.kt';s=p.read_text()
+              old='val fac=FactionCatalog[config.factionIds[t.climateOwner]]; fun mult(r:Resource)=fac.resourceMultipliers[r]?:1.0; val r=hash(config.seed,x,y,501)'
+              assert s.count(old)==1
+              new='val fac=FactionCatalog[config.factionIds[t.climateOwner]]\n            fun mult(r:Resource)=fac.resourceMultipliers[r]?:1.0\n            val r=hash(config.seed,x,y,501)'
+              p.write_text(s.replace(old,new,1))
+          print('relay_format_normalization=PASS copies=2')
+          PY
+
+          python mini4x-4r2/patch_4r2.py /tmp/cap-base
+          python mini4x-4r2/patch_4r2.py /tmp/cap-candidate
+          python mini4x-4r3/patch_4r3.py /tmp/cap-base
+          python mini4x-4r3/patch_4r3.py /tmp/cap-candidate
+
+          # LAKES .870 is identical on both sides. Only capital placement may differ.
+          python - <<'PY'
+          from pathlib import Path
+          for root_name in ('/tmp/cap-base','/tmp/cap-candidate'):
+              p=Path(root_name)/'MapGenerator.kt';s=p.read_text()
+              old='WaterPreset.LAKES -> .72';new='WaterPreset.LAKES -> .87'
+              assert s.count(old)==1
+              p.write_text(s.replace(old,new,1))
+          print('shared_lakes_threshold=PASS value=0.870 copies=2')
+          PY
+
+          python mini4x-4r5/patch_balanced_capitals.py /tmp/cap-candidate
+
+          # Candidate transform is source-isolated to MapGenerator.kt.
+          for f in /tmp/cap-base/*.kt; do
+            name="$(basename "$f")"
+            if [ "$name" != MapGenerator.kt ]; then cmp "$f" "/tmp/cap-candidate/$name" >/dev/null; fi
+          done
+          echo balanced_capital_scope=PASS changed_file=MapGenerator.kt
+
+          HAR=mini4x-4r5/harness/BalancedCapitalCandidateHarness.kt
+          AUDIT=mini4x-4r2/harness/SimInvariantAudit.kt
+          kotlinc /tmp/cap-base/*.kt "$AUDIT" "$HAR" -d /tmp/cap-base.jar
+          kotlinc /tmp/cap-candidate/*.kt "$AUDIT" "$HAR" -d /tmp/cap-candidate.jar
+          echo phase4r5_capitals_compile=PASS
+
+          SEEDS="${MINI4X_CAPITAL_SEEDS:-30}"
+          kotlin -classpath /tmp/cap-base.jar com.example.mini4x.research.BalancedCapitalCandidateHarness baseline "$SEEDS" | tee /tmp/cap-base.log
+          kotlin -classpath /tmp/cap-candidate.jar com.example.mini4x.research.BalancedCapitalCandidateHarness candidate "$SEEDS" | tee /tmp/cap-candidate.log
+          grep -Fq 'balanced_capital_harness=PASS mode=baseline' /tmp/cap-base.log
+          grep -Fq 'balanced_capital_harness=PASS mode=candidate' /tmp/cap-candidate.log
+
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def parse(path):
+              rows={}
+              pat=re.compile(
+                  r'^capital_quality mode=(\w+) size=(\w+) preset=(\w+) seeds=(\d+) '
+                  r'meanCV=([0-9.]+) meanGapFraction=([0-9.]+) slotSpread=([0-9.]+) '
+                  r'largestLand=([0-9.]+) connected=([0-9.]+) openingMean=([0-9.]+) '
+                  r'openingSlots=([0-9.,]+)$'
+              )
+              for line in Path(path).read_text().splitlines():
+                  m=pat.match(line)
+                  if not m: continue
+                  mode,size,preset,seeds,*vals=m.groups()
+                  rows[(size,preset)]={
+                      'mode':mode,'seeds':int(seeds),'cv':float(vals[0]),'gap':float(vals[1]),
+                      'spread':float(vals[2]),'land':float(vals[3]),'connected':float(vals[4]),
+                      'opening':float(vals[5]),'slots':[float(x) for x in vals[6].split(',')],
+                  }
+              return rows
+
+          base=parse('/tmp/cap-base.log');cand=parse('/tmp/cap-candidate.log')
+          assert len(base)==36 and set(base)==set(cand), (len(base),len(cand))
+          for key in sorted(base):
+              b=base[key];c=cand[key]
+              # Predeclared geometry-improvement bounds.
+              assert c['cv'] <= b['cv']*0.80 + 1e-9, (key,'cv',b['cv'],c['cv'])
+              assert c['spread'] <= b['spread']*0.50 + 1e-9, (key,'spread',b['spread'],c['spread'])
+              # Broad no-regression bounds for topology and first-three-turn opportunity.
+              assert c['land'] >= b['land']-0.04-1e-9, (key,'land',b['land'],c['land'])
+              assert c['connected'] >= b['connected']-0.10-1e-9, (key,'connected',b['connected'],c['connected'])
+              assert c['opening'] >= b['opening']-0.10-1e-9, (key,'opening',b['opening'],c['opening'])
+              for slot,(bv,cv) in enumerate(zip(b['slots'],c['slots'])):
+                  assert cv >= bv-0.20-1e-9, (key,'slot',slot,bv,cv)
+          mean_base_cv=sum(v['cv'] for v in base.values())/len(base)
+          mean_cand_cv=sum(v['cv'] for v in cand.values())/len(cand)
+          mean_base_spread=sum(v['spread'] for v in base.values())/len(base)
+          mean_cand_spread=sum(v['spread'] for v in cand.values())/len(cand)
+          print(f'balanced_capital_comparison=PASS configurations={len(base)} baselineMeanCV={mean_base_cv:.5f} candidateMeanCV={mean_cand_cv:.5f} baselineMeanSlotSpread={mean_base_spread:.5f} candidateMeanSlotSpread={mean_cand_spread:.5f}')
+          print('balanced_capital_topology_opening_no_regression=PASS')
+          PY
+
+          echo phase4r5_balanced_capitals_gate=PASS
+      - name: Preserve balanced-capital result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mini4x-phase4r5-balanced-capitals-result
+          path: phase4r5-capitals-results.txt
+          retention-days: 7
