@@ -1,0 +1,84 @@
+name: Mini4X Phase 4R.5 LAKES Candidate Gate
+
+on:
+  push:
+    branches: [mini4x-public-qa-temp]
+    paths:
+      - 'mini4x-4r5/RUN_LAKES'
+
+permissions:
+  contents: read
+
+jobs:
+  phase4r5-lakes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Kotlin 1.9.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/kotlin.zip https://github.com/JetBrains/kotlin/releases/download/v1.9.0/kotlin-compiler-1.9.0.zip
+          unzip -q /tmp/kotlin.zip -d /tmp/kotlin
+          echo "/tmp/kotlin/kotlinc/bin" >> "$GITHUB_PATH"
+      - name: Verify isolated LAKES threshold candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          exec > >(tee phase4r5-lakes-results.txt) 2>&1
+          rm -rf /tmp/lakes-base /tmp/lakes-candidate
+          cp -a mini4x-4r2/sim /tmp/lakes-base
+          cp -a mini4x-4r2/sim /tmp/lakes-candidate
+
+          # Both sides receive the already-promoted 4R.2/4R.3 simulation/save hardening.
+          python mini4x-4r2/patch_4r2.py /tmp/lakes-base
+          python mini4x-4r2/patch_4r2.py /tmp/lakes-candidate
+          python mini4x-4r3/patch_4r3.py /tmp/lakes-base
+          python mini4x-4r3/patch_4r3.py /tmp/lakes-candidate
+
+          # Candidate scope is intentionally one MapGenerator constant only.
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/lakes-candidate/MapGenerator.kt')
+          s=p.read_text()
+          old='WaterPreset.LAKES -> .72'
+          new='WaterPreset.LAKES -> .87'
+          assert s.count(old)==1, f'LAKES threshold anchor count={s.count(old)}'
+          p.write_text(s.replace(old,new,1))
+          assert new in p.read_text()
+          print('lakes_threshold_candidate=APPLIED threshold=0.870 scope=single_constant')
+          PY
+
+          HAR=mini4x-4r5/harness/LakesThresholdPropertyHarness.kt
+          AUDIT=mini4x-4r2/harness/SimInvariantAudit.kt
+          kotlinc /tmp/lakes-base/*.kt "$AUDIT" "$HAR" -d /tmp/lakes-base.jar
+          kotlinc /tmp/lakes-candidate/*.kt "$AUDIT" "$HAR" -d /tmp/lakes-candidate.jar
+          echo phase4r5_lakes_compile=PASS
+
+          SEEDS="${MINI4X_LAKES_SEEDS:-40}"
+          kotlin -classpath /tmp/lakes-base.jar com.example.mini4x.research.LakesThresholdPropertyHarness baseline "$SEEDS" | tee /tmp/lakes-baseline.log
+          kotlin -classpath /tmp/lakes-candidate.jar com.example.mini4x.research.LakesThresholdPropertyHarness candidate "$SEEDS" | tee /tmp/lakes-candidate.log
+
+          grep -Fq 'lakes_threshold_defect_reproduced=PASS' /tmp/lakes-baseline.log
+          grep -Fq 'lakes_threshold_candidate_properties=PASS threshold_candidate=0.870' /tmp/lakes-candidate.log
+          grep -Fq 'map_preset_smoke=PASS mode=baseline' /tmp/lakes-baseline.log
+          grep -Fq 'map_preset_smoke=PASS mode=candidate' /tmp/lakes-candidate.log
+
+          base_digest="$(sed -n 's/^non_lakes_digest=\([^ ]*\).*/\1/p' /tmp/lakes-baseline.log)"
+          candidate_digest="$(sed -n 's/^non_lakes_digest=\([^ ]*\).*/\1/p' /tmp/lakes-candidate.log)"
+          test -n "$base_digest"
+          test "$base_digest" = "$candidate_digest"
+          echo "non_lakes_full_state_digest_equivalence=PASS digest=$base_digest"
+          echo phase4r5_lakes_candidate_gate=PASS
+      - name: Preserve LAKES gate result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mini4x-phase4r5-lakes-result
+          path: phase4r5-lakes-results.txt
+          retention-days: 7
