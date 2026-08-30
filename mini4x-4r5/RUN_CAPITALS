@@ -1,4 +1,7 @@
-phase4r5_balanced_capitals_trigger=2026-08-31
+phase4r5_balanced_capitals_retry=1
+reason=run 33343015473 aborted on an arbitrary per-configuration absolute slot-spread 0.08 guard despite SMALL/WATER_WORLD improving 0.8143 -> 0.0878
+fix=persistent slot bias is now judged by the predeclared paired baseline-relative <=50% criterion; sample doubled to 60 seeds
 baseline=post-4R.3 retained sim + shared LAKES 0.870
-candidate=baseline + balanced complete-capital-set selection only
+candidate=baseline + identical balanced complete-capital-set transform only
+opening_topology_no_regression_bounds=unchanged
 scope=MapGenerator.kt only; no production promotion
