@@ -1,0 +1,4 @@
+phase4r5_balanced_capitals_trigger=2026-08-31
+baseline=post-4R.3 retained sim + shared LAKES 0.870
+candidate=baseline + balanced complete-capital-set selection only
+scope=MapGenerator.kt only; no production promotion
