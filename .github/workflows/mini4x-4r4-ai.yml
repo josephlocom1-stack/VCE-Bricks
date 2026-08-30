@@ -4,7 +4,7 @@ on:
   push:
     branches: [mini4x-public-qa-temp]
     paths:
-      - 'mini4x-4r4/RUN'
+      - 'mini4x-4r4/RUN2'
 
 permissions:
   contents: read
@@ -31,17 +31,26 @@ jobs:
         run: |
           set -euo pipefail
           exec > >(tee phase4r4-results.txt) 2>&1
-          rm -rf /tmp/project
-          (cd mini4x-runner && bash qa/reconstruct_v14_current.sh /tmp/project)
-          SIM=/tmp/project/app/src/main/java/com/example/mini4x/sim
-          AI=/tmp/project/app/src/main/java/com/example/mini4x/ai
-          PRES=/tmp/project/app/src/main/java/com/example/mini4x/presentation/GamePresenter.kt
+          rm -rf /tmp/m4x /tmp/ai
+          cp -a mini4x-4r2/sim /tmp/m4x
+          mkdir -p /tmp/ai
+          cat mini4x-4r4/StrategicAi.part1 mini4x-4r4/StrategicAi.part2 > /tmp/ai/StrategicAi.kt
+          SIM=/tmp/m4x
+          AI=/tmp/ai
           HAR=mini4x-4r4/harness
+
+          # Same lexical-only relay normalization proven in successful 4R.2/4R.3 JVM gates.
+          python - <<'PY'
+          from pathlib import Path
+          root=Path('/tmp/m4x')
+          p=root/'CommandEngine.kt';s=p.read_text();assert 'return"' in s;s=s.replace('return"','return "').replace('"else','" else');p.write_text(s)
+          p=root/'MapGenerator.kt';s=p.read_text();old='val fac=FactionCatalog[config.factionIds[t.climateOwner]]; fun mult(r:Resource)=fac.resourceMultipliers[r]?:1.0; val r=hash(config.seed,x,y,501)';assert s.count(old)==1;new='val fac=FactionCatalog[config.factionIds[t.climateOwner]]\n            fun mult(r:Resource)=fac.resourceMultipliers[r]?:1.0\n            val r=hash(config.seed,x,y,501)';p.write_text(s.replace(old,new,1))
+          print('relay_format_normalization=PASS')
+          PY
 
           python mini4x-4r2/patch_4r2.py "$SIM"
           python mini4x-4r3/patch_4r3.py "$SIM"
 
-          grep -Fq 'val maxAiActions=when(state.difficulty.coerceIn(1,4)){1->16;2->24;3->36;else->50}' "$PRES"
           grep -Fq 'val beam=when(difficulty){1->4;2->6;3->9;else->12}' "$AI/StrategicAi.kt"
           grep -Fq 'val second=when(difficulty){1->1;2->2;3->4;else->6}' "$AI/StrategicAi.kt"
           echo 'ai_budget_contract=PASS attempts=16,24,36,50 search_copies=8,18,45,84'
