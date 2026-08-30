@@ -1,0 +1,4 @@
+phase4r5_lakes_trigger=2026-08-31
+purpose=isolated Kotlin property proof for LAKES .72 -> .87 candidate
+source_baseline=post-4R.3 retained canonical simulation bundle
+scope=single MapGenerator threshold constant; no production promotion
