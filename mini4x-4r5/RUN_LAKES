@@ -1,4 +1,5 @@
-phase4r5_lakes_trigger=2026-08-31
+phase4r5_lakes_retry=1
+reason=first run 33342588430 failed before property execution because compact relay Kotlin lacked the proven lexical normalization
+fix=workflow now applies the same CommandEngine and MapGenerator normalization used by successful 4R.4 run 33336585642
 purpose=isolated Kotlin property proof for LAKES .72 -> .87 candidate
-source_baseline=post-4R.3 retained canonical simulation bundle
 scope=single MapGenerator threshold constant; no production promotion
