@@ -4,13 +4,13 @@ on:
   push:
     branches: [mini4x-public-qa-temp]
     paths:
-      - 'mini4x-4r4/RUN3'
+      - 'mini4x-4r4/RUN4'
 
 permissions:
   contents: read
 
 jobs:
-  phase4r4:
+  phase4r4-selfplay:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -26,11 +26,11 @@ jobs:
           curl -fsSL -o /tmp/kotlin.zip https://github.com/JetBrains/kotlin/releases/download/v1.9.0/kotlin-compiler-1.9.0.zip
           unzip -q /tmp/kotlin.zip -d /tmp/kotlin
           echo "/tmp/kotlin/kotlinc/bin" >> "$GITHUB_PATH"
-      - name: Run Phase 4R.4 retained-AI gates
+      - name: Complete Phase 4R.4 self-play soak
         shell: bash
         run: |
           set -euo pipefail
-          exec > >(tee phase4r4-results.txt) 2>&1
+          exec > >(tee phase4r4-selfplay-results.txt) 2>&1
           rm -rf /tmp/m4x /tmp/ai
           cp -a mini4x-4r2/sim /tmp/m4x
           mkdir -p /tmp/ai
@@ -39,7 +39,7 @@ jobs:
           AI=/tmp/ai
           HAR=mini4x-4r4/harness
 
-          # Same lexical-only relay normalization proven in successful 4R.2/4R.3 JVM gates.
+          # Same lexical-only relay normalization and exact retained source used by run 33309823964.
           python - <<'PY'
           from pathlib import Path
           root=Path('/tmp/m4x')
@@ -58,20 +58,41 @@ jobs:
 
           kotlinc "$SIM"/*.kt "$AI"/*.kt \
             mini4x-4r2/harness/SimInvariantAudit.kt \
-            "$HAR/AiDecisionFixtures.kt" \
-            "$HAR/AiTurnPlanReplayHarness.kt" \
             "$HAR/AiSelfPlaySoakHarness.kt" \
-            -d /tmp/phase4r4.jar
-          echo phase4r4_compile=PASS
+            -d /tmp/phase4r4-selfplay.jar
+          echo phase4r4_selfplay_compile=PASS
 
-          kotlin -classpath /tmp/phase4r4.jar com.example.mini4x.research.AiDecisionFixtures
-          kotlin -classpath /tmp/phase4r4.jar com.example.mini4x.research.AiTurnPlanReplayHarness 16
-          kotlin -classpath /tmp/phase4r4.jar com.example.mini4x.research.AiSelfPlaySoakHarness 16 80
-          echo phase4r4_ai_quality=PASS
+          kotlin -classpath /tmp/phase4r4-selfplay.jar com.example.mini4x.research.AiSelfPlaySoakHarness 8 80 0 > /tmp/selfplay-0.log 2>&1 &
+          p0=$!
+          kotlin -classpath /tmp/phase4r4-selfplay.jar com.example.mini4x.research.AiSelfPlaySoakHarness 8 80 8 > /tmp/selfplay-8.log 2>&1 &
+          p8=$!
+          set +e
+          wait "$p0"; s0=$?
+          wait "$p8"; s8=$?
+          set -e
+          cat /tmp/selfplay-0.log
+          cat /tmp/selfplay-8.log
+          test "$s0" -eq 0
+          test "$s8" -eq 0
+          grep -Fq 'ai_selfplay_soak=PASS startIndex=0 games=8' /tmp/selfplay-0.log
+          grep -Fq 'ai_selfplay_soak=PASS startIndex=8 games=8' /tmp/selfplay-8.log
+
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          text=Path('/tmp/selfplay-0.log').read_text()+Path('/tmp/selfplay-8.log').read_text()
+          games=sorted(map(int,re.findall(r'^selfplay_game=(\d+)',text,re.M)))
+          assert games==list(range(16)), games
+          for difficulty in range(1,5):
+              assert re.search(rf'^selfplay_game=\d+ difficulty={difficulty} ',text,re.M), difficulty
+          assert text.count('ai_selfplay_soak=PASS')==2
+          print('ai_selfplay_sharded_coverage=PASS games=16 indices=0-15 difficulties=1-4 maxRounds=80 shards=2')
+          PY
+          echo phase4r4_selfplay_completion=PASS
       - name: Preserve JVM gate result
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mini4x-phase4r4-ai-result
-          path: phase4r4-results.txt
+          name: mini4x-phase4r4-selfplay-result
+          path: phase4r4-selfplay-results.txt
           retention-days: 7
