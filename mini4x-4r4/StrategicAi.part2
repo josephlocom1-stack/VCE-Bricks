@@ -1,0 +1,111 @@
+            if(t.terrain==Terrain.WATER && t.improvement==null && p.neighbours8().any{state.tile(it)?.territoryOwner==pid}) out+=BuildImprovement(pid,p,Improvement.PORT)
+            if(t.improvement==null && t.terrain==Terrain.FIELD) {
+                if(p.neighbours8().any{state.tile(it)?.improvement==Improvement.LUMBER_HUT}) out+=BuildImprovement(pid,p,Improvement.SAWMILL)
+                if(p.neighbours8().any{state.tile(it)?.improvement==Improvement.FARM}) out+=BuildImprovement(pid,p,Improvement.WINDMILL)
+                if(p.neighbours8().any{state.tile(it)?.improvement==Improvement.MINE}) out+=BuildImprovement(pid,p,Improvement.FORGE)
+                if(plan.goal in setOf(StrategicGoal.SCORE,StrategicGoal.ECONOMY)) {out+=BuildImprovement(pid,p,Improvement.MARKET);out+=BuildImprovement(pid,p,Improvement.TEMPLE)}
+            }
+            if(plan.goal in setOf(StrategicGoal.EXPAND,StrategicGoal.ATTACK,StrategicGoal.ECONOMY) && t.terrain !in setOf(Terrain.MOUNTAIN,Terrain.WATER,Terrain.OCEAN) && !t.road) out+=BuildRoad(pid,p)
+        }
+        plan.targetTech?.let{out+=BuyTechnology(pid,it)}
+        TechnologyCatalog.all.filter{TechnologyCatalog.canResearch(state,pid,it.id)}.take(8).forEach{out+=BuyTechnology(pid,it.id)}
+        if("strategy" in state.players[pid].technologies) state.players.indices.filter{it!=pid&&!state.players[it].eliminated}.forEach { other ->
+            if(state.diplomacy[pid][other]==Relation.NEUTRAL && plan.goal !in setOf(StrategicGoal.ATTACK)) out+=OfferPeace(pid,other)
+            if(state.diplomacy[pid][other]==Relation.PEACE && plan.goal==StrategicGoal.ATTACK) {
+                val mine=militaryPower(state,pid); val theirs=militaryPower(state,other)
+                if(mine>=theirs*.72 || state.roundNumber>=28) out+=BreakPeace(pid,other)
+            }
+        }
+        if("diplomacy" in state.players[pid].technologies) state.players.indices.filter{it!=pid&&it in state.players[pid].metPlayers}.forEach{out+=EstablishEmbassy(pid,it)}
+        out+=EndTurn(pid)
+        return out.distinct().filter{CommandEngine.validate(state,it)==null}
+    }
+
+    private fun quickCommandScore(state:SimState,pid:Int,c:Command,plan:AiPlan):Double {
+        var v=0.0
+        val stars=state.players[pid].stars
+        fun spending(cost:Int) { if(plan.reserveStars>0 && stars-cost<plan.reserveStars && plan.targetTech!=null) v-=8.0 }
+        when(c) {
+            is CaptureCity -> v+=120
+            is ChooseCityReward -> v+=when(c.reward){CityRewardType.SUPER_UNIT->80.0;CityRewardType.WORKSHOP->52.0;CityRewardType.BORDER_GROWTH->48.0;CityRewardType.POPULATION_3->46.0;CityRewardType.STARS_5->40.0;CityRewardType.WALL->if(plan.goal==StrategicGoal.DEFEND)60.0 else 32.0;CityRewardType.PARK->if(plan.goal==StrategicGoal.SCORE)65.0 else 33.0;CityRewardType.EXPLORER->38.0}
+            is AttackUnit -> {
+                val a=state.unit(c.attackerId)!!;val d=state.unit(c.defenderId)!!;val p=CombatRules.preview(state,a,d)
+                val targetCost=UnitCatalog[d.kind].cost ?: 8
+                v+=p.damageToDefender*5-p.retaliation*3 + targetCost*1.6
+                if(p.damageToDefender>=d.hp) v+=52+UnitCatalog[d.kind].defense*7+targetCost*2
+                if(p.retaliation>=a.hp) v-=70
+                if(state.tile(d.pos)?.cityId!=null) v+=42
+                if(plan.goal==StrategicGoal.ATTACK) v+=12
+            }
+            is MoveUnit -> {
+                val u=state.unit(c.unitId)!!; val dest=c.destination; val dt=state.tile(dest)
+                val village=discoveredVillages(state,pid).minOfOrNull{it.chebyshev(dest)}?:99
+                val enemyCity=enemyCitiesDiscovered(state,pid).minOfOrNull{it.pos.chebyshev(dest)}?:99
+                val frontier=dest.neighbours8().count{state.inBounds(it)&&it !in state.discoveredTiles[pid]}
+                if(plan.goal==StrategicGoal.EXPAND) v+=35-village*5+frontier*3
+                if(plan.goal==StrategicGoal.ATTACK) v+=52-enemyCity*7
+                if(plan.goal==StrategicGoal.DEFEND) {val threatCity=plan.threatenedCityIds.mapNotNull(state::city).minOfOrNull{it.pos.chebyshev(dest)}?:99;v+=30-threatCity*5}
+                if(dt?.village==true) v+=70
+                if(dt?.cityId!=null && state.city(dt.cityId!!)?.owner!=pid) v+=90
+                val localThreat=threatAt(state,pid,dest)
+                val hpRatio=u.hp.toDouble()/UnitCatalog.maxHP(u).coerceAtLeast(1)
+                v-=localThreat*(if(hpRatio<.45)3.8 else 2.0)
+                val fromCity=state.tile(u.pos)?.cityId
+                if(fromCity!=null && fromCity in plan.threatenedCityIds) v-=75
+                if(u.kind in setOf(UnitKind.ARCHER,UnitKind.CATAPULT) && MovementRules.enemyAdjacent(state,pid,dest)) v-=22
+                else if(MovementRules.enemyAdjacent(state,pid,dest) && UnitCatalog[u.kind].defense<2) v-=11
+            }
+            is HarvestResource -> {v+=35;spending(2)}
+            is BuildImprovement -> {val cost=ImprovementRules.rules[c.improvement]?.cost?:0;spending(cost);v+=when(c.improvement){Improvement.FARM,Improvement.MINE->44.0;Improvement.LUMBER_HUT->34.0;Improvement.PORT->31.0;Improvement.SAWMILL,Improvement.WINDMILL,Improvement.FORGE->38.0;Improvement.MARKET->if(plan.goal in setOf(StrategicGoal.ECONOMY,StrategicGoal.SCORE))40.0 else 22.0;Improvement.TEMPLE,Improvement.FOREST_TEMPLE->if(plan.goal==StrategicGoal.SCORE)48.0 else 15.0;else->20.0}}
+            is BuildRoad -> {v+=if(plan.goal==StrategicGoal.EXPAND)23.0 else 10.0;spending(3)}
+            is BuyTechnology -> {val cost=TechnologyCatalog.researchCost(state,pid,c.technologyId);v+=if(c.technologyId==plan.targetTech)68 else 30-2*TechnologyCatalog[c.technologyId].tier;spending(cost)}
+            is TrainUnit -> {
+                val cost=UnitCatalog[c.kind].cost?:0;spending(cost)
+                v+=when(plan.goal){StrategicGoal.DEFEND->when(c.kind){UnitKind.DEFENDER->48.0;UnitKind.ARCHER->40.0;else->30.0};StrategicGoal.ATTACK->when(c.kind){UnitKind.KNIGHT,UnitKind.SWORDSMAN,UnitKind.CATAPULT->48.0;UnitKind.RIDER,UnitKind.ARCHER->40.0;else->28.0};StrategicGoal.EXPAND->if(c.kind==UnitKind.RIDER)46.0 else 29.0;else->28.0}
+                val city=state.city(c.cityId)
+                if(city!=null){val local=threatAt(state,pid,city.pos);val nearby=state.units.filter{it.owner!=pid&&state.diplomacy[pid][it.owner]!=Relation.PEACE&&it.pos.chebyshev(city.pos)<=4};val immediate=nearby.filter{it.pos.chebyshev(city.pos)<=1};if(local>8.0)v+=when(c.kind){UnitKind.DEFENDER->72.0;UnitKind.SWORDSMAN->20.0;UnitKind.ARCHER->10.0;UnitKind.CATAPULT->-18.0;else->4.0};if(immediate.isNotEmpty())v+=when(c.kind){UnitKind.DEFENDER->110.0;UnitKind.SWORDSMAN->24.0;UnitKind.ARCHER->-35.0;UnitKind.CATAPULT->-80.0;else->0.0};if(immediate.isEmpty()&&nearby.any{UnitCatalog[it.kind].defense>=3.0}&&c.kind==UnitKind.CATAPULT)v+=22;if(nearby.any{UnitCatalog[it.kind].movement>=3.0}&&c.kind==UnitKind.DEFENDER)v+=18}
+            }
+            is RecoverUnit -> v+=18
+            is ExamineRuin -> v+=70
+            is GatherStarfish -> v+=60
+            is UpgradeShip -> v+=32
+            is SpecialAction -> v+=when(c.action){SpecialActionType.INFILTRATE->60;SpecialActionType.HEAL_ADJACENT->34;SpecialActionType.DISBAND->8;SpecialActionType.DESTROY_BUILDING->5}
+            is EstablishEmbassy -> v+=if(plan.goal==StrategicGoal.ECONOMY)35.0 else 22.0
+            is OfferPeace -> v+=if(plan.goal==StrategicGoal.DEFEND)40.0 else 12.0
+            is BreakPeace -> v+=if(plan.goal==StrategicGoal.ATTACK)42.0 else -15.0
+            is EndTurn -> v-=2
+        }
+        return v
+    }
+
+    private fun evaluate(state:SimState,pid:Int,plan:AiPlan):Double {
+        if(state.finished) return if(state.winnerId==pid) 1_000_000.0 else -1_000_000.0
+        if(state.players[pid].eliminated) return -900_000.0
+        val enemyIds=state.players.indices.filter{it!=pid&&!state.players[it].eliminated}
+        val enemyScore=if(enemyIds.isEmpty())0.0 else enemyIds.map{state.score[it]}.average()
+        var v=(state.score[pid]-enemyScore)*.65
+        v+=state.players[pid].stars*2.0
+        v+=DerivedState.totalIncome(state,pid)*22.0
+        v+=state.ownedCities(pid).size*120+state.ownedCities(pid).sumOf{it.level}*24
+        v+=militaryPower(state,pid)*14
+        v+=state.discoveredTiles[pid].size*1.4
+        v+=state.players[pid].technologies.sumOf{TechnologyCatalog[it].tier}*16
+        v-=state.ownedCities(pid).sumOf{threatAt(state,pid,it.pos)}*8
+        if(plan.goal==StrategicGoal.EXPAND) v+=state.ownedCities(pid).size*45
+        if(plan.goal==StrategicGoal.SCORE) v+=state.score[pid]*.25
+        if(plan.goal==StrategicGoal.ATTACK) v-=enemyIds.sumOf{state.ownedCities(it).size}*35
+        return v
+    }
+
+    fun militaryPower(state:SimState,pid:Int):Double=state.ownedUnits(pid).sumOf{u->val t=UnitCatalog[u.kind];val health=u.hp.toDouble()/UnitCatalog.maxHP(u).coerceAtLeast(1);(t.attack*1.4+t.defense+t.movement*.55+t.range*.65+if(Skill.SPLASH in UnitCatalog.skills(u))2.0 else 0.0)*health}
+    fun threatAt(state:SimState,pid:Int,pos:Pos):Double{var threat=0.0;for(u in state.units){if(u.owner==pid||state.diplomacy[pid][u.owner]==Relation.PEACE)continue;val t=UnitCatalog[u.kind];val distance=u.pos.chebyshev(pos);if(distance<=t.movement+t.range)threat+=(t.attack*1.5+t.movement*.4+t.range*.5)*(u.hp.toDouble()/UnitCatalog.maxHP(u))};return threat}
+    private fun stableTie(state:SimState,c:Command):Long{var h=1125899906842597L;for(ch in c.toString())h=31*h+ch.code;return h xor state.seed xor state.roundNumber.toLong().shl(21)}
+}
+
+object BaselineAi {
+    fun chooseCommand(state:SimState,pid:Int=state.activePlayer):Command {
+        val commands=mutableListOf<Command>();state.ownedCities(pid).forEach{commands+=LegalCommandGenerator.forCity(state,it)};state.ownedUnits(pid).filter{!it.tookAction||!it.moved||!it.attacked}.sortedBy{it.id}.take(7).forEach{commands+=LegalCommandGenerator.forUnit(state,it)};TechnologyCatalog.all.firstOrNull{TechnologyCatalog.canResearch(state,pid,it.id)}?.let{commands+=BuyTechnology(pid,it.id)};state.discoveredTiles[pid].asSequence().mapNotNull(state::tile).filter{it.territoryOwner==pid&&it.resource!=null}.take(6).forEach{t->if(t.resource in setOf(Resource.FRUIT,Resource.ANIMAL,Resource.FISH))commands+=HarvestResource(pid,t.pos)};commands+=EndTurn(pid)
+        val legal=commands.distinct().filter{CommandEngine.validate(state,it)==null};fun score(c:Command)=when(c){is CaptureCity->100.0;is AttackUnit->50.0;is ExamineRuin->45.0;is HarvestResource->35.0;is ChooseCityReward->34.0;is BuyTechnology->25.0;is BuildImprovement->22.0;is TrainUnit->20.0;is MoveUnit->10.0;is RecoverUnit->8.0;is EndTurn->-1.0;else->4.0};return legal.maxByOrNull(::score)?:EndTurn(pid)
+    }
+    fun playTurn(state:SimState,pid:Int=state.activePlayer,maxActions:Int=96){var n=0;while(!state.finished&&state.activePlayer==pid&&n++<maxActions){val c=chooseCommand(state,pid);val r=CommandEngine.execute(state,c);if(!r.accepted||c is EndTurn)break};if(!state.finished&&state.activePlayer==pid)CommandEngine.execute(state,EndTurn(pid))}
+}
