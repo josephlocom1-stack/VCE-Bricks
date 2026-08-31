@@ -1,0 +1,118 @@
+name: Mini4X Phase 4R.6 Smoothness Gate
+
+on:
+  push:
+    branches: [mini4x-public-qa-temp]
+    paths:
+      - 'mini4x-4r6/RUN_SMOOTHNESS'
+
+permissions:
+  contents: read
+
+jobs:
+  phase4r6-smoothness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Kotlin 1.9.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/kotlin.zip https://github.com/JetBrains/kotlin/releases/download/v1.9.0/kotlin-compiler-1.9.0.zip
+          unzip -q /tmp/kotlin.zip -d /tmp/kotlin
+          echo "/tmp/kotlin/kotlinc/bin" >> "$GITHUB_PATH"
+      - name: Verify Phase 4R.6 candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          exec > >(tee phase4r6-smoothness-results.txt) 2>&1
+          rm -rf /tmp/smooth-sim /tmp/smooth-current /tmp/smooth-candidate
+          cp -a mini4x-4r2/sim /tmp/smooth-sim
+          mkdir -p /tmp/smooth-current /tmp/smooth-candidate
+          cp mini4x-4r6/current/AnimationSystem.kt /tmp/smooth-current/AnimationSystem.kt
+          cp mini4x-4r6/current/ViewContract.kt.txt /tmp/smooth-current/ViewContract.kt.txt
+          cp /tmp/smooth-current/AnimationSystem.kt /tmp/smooth-candidate/AnimationSystem.kt
+          cp /tmp/smooth-current/ViewContract.kt.txt /tmp/smooth-candidate/ViewContract.kt.txt
+
+          # Normalize retained compact source and apply all already-promoted simulation work.
+          python - <<'PY'
+          from pathlib import Path
+          root=Path('/tmp/smooth-sim')
+          p=root/'CommandEngine.kt';s=p.read_text();assert 'return"' in s
+          p.write_text(s.replace('return"','return "').replace('"else','" else'))
+          p=root/'MapGenerator.kt';s=p.read_text()
+          old='val fac=FactionCatalog[config.factionIds[t.climateOwner]]; fun mult(r:Resource)=fac.resourceMultipliers[r]?:1.0; val r=hash(config.seed,x,y,501)'
+          assert s.count(old)==1
+          new='val fac=FactionCatalog[config.factionIds[t.climateOwner]]\n            fun mult(r:Resource)=fac.resourceMultipliers[r]?:1.0\n            val r=hash(config.seed,x,y,501)'
+          p.write_text(s.replace(old,new,1))
+          print('relay_format_normalization=PASS')
+          PY
+          python mini4x-4r2/patch_4r2.py /tmp/smooth-sim
+          python mini4x-4r3/patch_4r3.py /tmp/smooth-sim
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/smooth-sim/MapGenerator.kt');s=p.read_text()
+          old='WaterPreset.LAKES -> .72';new='WaterPreset.LAKES -> .87'
+          assert s.count(old)==1
+          p.write_text(s.replace(old,new,1))
+          print('shared_lakes_threshold=PASS value=0.870')
+          PY
+
+          python mini4x-4r6/patch_smoothness_candidate.py \
+            --animation-system /tmp/smooth-candidate/AnimationSystem.kt \
+            --view-contract /tmp/smooth-candidate/ViewContract.kt.txt
+
+          # JVM proof: visible animation semantics + queued-before-current input busy state.
+          kotlinc /tmp/smooth-sim/*.kt \
+            /tmp/smooth-candidate/AnimationSystem.kt \
+            mini4x-4r6/harness/SmoothnessHarness.kt \
+            -d /tmp/smoothness.jar
+          kotlin -classpath /tmp/smoothness.jar com.example.mini4x.research.SmoothnessHarness | tee /tmp/smoothness-jvm.log
+          grep -Fq 'phase4r6_smoothness_jvm=PASS' /tmp/smoothness-jvm.log
+
+          # Source contract: preserve eager preload, camera gestures, LRU and arbitration.
+          python - <<'PY'
+          from pathlib import Path
+          before=Path('/tmp/smooth-current/ViewContract.kt.txt').read_text()
+          after=Path('/tmp/smooth-candidate/ViewContract.kt.txt').read_text()
+          anim=Path('/tmp/smooth-candidate/AnimationSystem.kt').read_text()
+
+          assert before.count('soundPool.load(')==5
+          assert after.count('soundPool.load(')==5
+          assert 'ConcurrentHashMap.newKeySet<Int>()' in after
+          assert 'setOnLoadCompleteListener{_,sampleId,status->if(status==0)readySounds+=sampleId}' in after
+          assert 'if(id!=0&&id in readySounds)soundPool.play' in after
+          assert 'soundPool.setOnLoadCompleteListener(null);soundPool.release();readySounds.clear();bitmaps.evictAll();atlas.clear()' in after
+          assert 'presenter.screen==ScreenMode.WORLD && presenter.animations.isBusy()' in after
+          assert 'presenter.animations.current!=null' not in after
+
+          preserved=[
+              'private val bitmaps=object:LruCache<String,Bitmap>(16*1024*1024)',
+              'if(presenter.screen==ScreenMode.TECH){techScale=(techScale*s.scaleFactor).coerceIn(.62f,1.85f)} else camera.zoom(s.scaleFactor,s.focusX,s.focusY)',
+              'if(presenter.screen==ScreenMode.TECH){techPanX-=dx;techPanY-=dy;techPanX=techPanX.coerceIn(-width*.34f,width*.34f);techPanY=techPanY.coerceIn(-height*.34f,height*.34f)} else if(presenter.screen==ScreenMode.WORLD)camera.pan(-dx,-dy)',
+              'override fun onDoubleTap(e:MotionEvent):Boolean{if(presenter.screen==ScreenMode.WORLD)home();return true}',
+              'override fun onTouchEvent(e:MotionEvent):Boolean{scaleDetector.onTouchEvent(e);if(!scaleDetector.isInProgress)gesture.onTouchEvent(e);return true}',
+          ]
+          for marker in preserved:
+              assert marker in before and marker in after, marker
+
+          assert 'EventType.TECH_RESEARCHED,EventType.STARS_CHANGED -> Unit' in anim
+          assert 'EventType.TILES_DISCOVERED -> if(e.playerId==before.humanPlayerId)' in anim
+          assert 'fun isBusy():Boolean=current!=null||clips.isNotEmpty()' in anim
+          print('smoothness_view_contract=PASS eager_preload=5 camera_gestures_preserved=true lru_preserved=true single_tap_gate=isBusy sound_ready=true')
+          print('smoothness_animation_source_contract=PASS invisible_duration_removed=true ai_fog_filtered=true queue_busy_includes_pending=true')
+          PY
+
+          echo phase4r6_smoothness_gate=PASS
+      - name: Preserve smoothness result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mini4x-phase4r6-smoothness-result
+          path: phase4r6-smoothness-results.txt
+          retention-days: 7
