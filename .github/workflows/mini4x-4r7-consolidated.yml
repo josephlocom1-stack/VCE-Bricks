@@ -1,0 +1,130 @@
+name: Mini4X Phase 4R.7 Consolidated JVM Gate
+
+on:
+  push:
+    branches: [mini4x-public-qa-temp]
+    paths:
+      - 'mini4x-4r7/RUN_CONSOLIDATED'
+
+permissions:
+  contents: read
+
+jobs:
+  phase4r7-consolidated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Kotlin 1.9.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/kotlin.zip https://github.com/JetBrains/kotlin/releases/download/v1.9.0/kotlin-compiler-1.9.0.zip
+          unzip -q /tmp/kotlin.zip -d /tmp/kotlin
+          echo "/tmp/kotlin/kotlinc/bin" >> "$GITHUB_PATH"
+      - name: Re-run promoted 4R JVM contracts together
+        shell: bash
+        run: |
+          set -euo pipefail
+          exec > >(tee phase4r7-consolidated-results.txt) 2>&1
+          SRC="$GITHUB_WORKSPACE/mini4x-4r2/sim"
+          HAR="$GITHUB_WORKSPACE/mini4x-4r2/harness"
+          rm -rf /tmp/4r7-sim /tmp/4r7-presentation
+          cp -a "$SRC" /tmp/4r7-sim
+          mkdir -p /tmp/4r7-presentation
+          cp mini4x-4r6/current/AnimationSystem.kt /tmp/4r7-presentation/AnimationSystem.kt
+          cp mini4x-4r6/current/ViewContract.kt.txt /tmp/4r7-presentation/ViewContract.kt.txt
+
+          test "$(git hash-object "$SRC/Model.kt")" = 6bd15026c113180715886b23e5de64b50518d576
+          test "$(git hash-object "$SRC/CombatRules.kt")" = 5b16516d5716f184b00c42dc240fb72236a857ed
+          test "$(git hash-object "$SRC/Commands.kt")" = 0968668bcb4e58ef4edd54a3b11a26f16dd205fb
+          test "$(git hash-object "$SRC/LegalCommandGenerator.kt")" = 566458472f643671fc1f4b2c4a51b304971d660d
+          test "$(git hash-object "$SRC/MovementRules.kt")" = 4c8c4bf0887c6cc2fd2ad8e88ff45129a7b3a850
+          echo phase4r7_relay_source_identity=PASS
+
+          python - <<'PY'
+          from pathlib import Path
+          root=Path('/tmp/4r7-sim')
+          p=root/'CommandEngine.kt';s=p.read_text();assert 'return"' in s
+          p.write_text(s.replace('return"','return "').replace('"else','" else'))
+          p=root/'MapGenerator.kt';s=p.read_text()
+          old='val fac=FactionCatalog[config.factionIds[t.climateOwner]]; fun mult(r:Resource)=fac.resourceMultipliers[r]?:1.0; val r=hash(config.seed,x,y,501)'
+          assert s.count(old)==1
+          new='val fac=FactionCatalog[config.factionIds[t.climateOwner]]\n            fun mult(r:Resource)=fac.resourceMultipliers[r]?:1.0\n            val r=hash(config.seed,x,y,501)'
+          p.write_text(s.replace(old,new,1))
+          print('relay_format_normalization=PASS')
+          PY
+
+          python mini4x-4r2/patch_4r2.py /tmp/4r7-sim
+          python mini4x-4r3/patch_4r3.py /tmp/4r7-sim
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/4r7-sim/MapGenerator.kt');s=p.read_text()
+          old='WaterPreset.LAKES -> .72';new='WaterPreset.LAKES -> .87'
+          assert s.count(old)==1
+          p.write_text(s.replace(old,new,1))
+          print('phase4r7_lakes_promotion=APPLIED value=0.870')
+          PY
+          python mini4x-4r6/patch_smoothness_candidate.py \
+            --animation-system /tmp/4r7-presentation/AnimationSystem.kt \
+            --view-contract /tmp/4r7-presentation/ViewContract.kt.txt
+          echo phase4r7_promoted_stack_application=PASS
+
+          kotlinc /tmp/4r7-sim/*.kt \
+            "$HAR"/*.kt \
+            mini4x-4r3/SaveCorruptionHardeningHarness.kt \
+            mini4x-4r5/harness/LakesThresholdPropertyHarness.kt \
+            /tmp/4r7-presentation/AnimationSystem.kt \
+            mini4x-4r6/harness/SmoothnessHarness.kt \
+            -d /tmp/4r7.jar
+          echo phase4r7_combined_compile=PASS
+
+          kotlin -classpath /tmp/4r7.jar com.example.mini4x.research.SimulationEdgeCaseFixtures expect-clean
+          kotlin -classpath /tmp/4r7.jar com.example.mini4x.research.CapitalOwnershipSemanticsHarness expect-owned
+          kotlin -classpath /tmp/4r7.jar com.example.mini4x.research.EliminationScoreIdempotenceHarness expect-idempotent
+          kotlin -classpath /tmp/4r7.jar com.example.mini4x.research.LostCapitalRuinPopulationHarness expect-owned-fallback
+          echo phase4r7_targeted_sim_integrity=PASS
+
+          kotlin -classpath /tmp/4r7.jar com.example.mini4x.research.SimulationFuzzHarness 6 250
+          kotlin -classpath /tmp/4r7.jar com.example.mini4x.research.LegalCommandBranchFuzzHarness 6 100 3
+          kotlin -classpath /tmp/4r7.jar com.example.mini4x.research.DerivedStateFixedPointFuzzHarness 8 250
+          kotlin -classpath /tmp/4r7.jar com.example.mini4x.research.SaveResumeEquivalenceHarness 6 180
+          echo phase4r7_simulation_regressions=PASS
+
+          kotlin -classpath /tmp/4r7.jar com.example.mini4x.research.SaveCorruptionHardeningHarness
+          echo phase4r7_save_corruption=PASS
+
+          kotlin -classpath /tmp/4r7.jar com.example.mini4x.research.LakesThresholdPropertyHarness candidate 12 | tee /tmp/4r7-lakes.log
+          grep -Fq 'lakes_threshold_candidate_properties=PASS threshold_candidate=0.870' /tmp/4r7-lakes.log
+          grep -Fq 'map_preset_smoke=PASS mode=candidate maps=432' /tmp/4r7-lakes.log
+          echo phase4r7_map_regression=PASS sizes=6 presets=6 seeds=12
+
+          kotlin -classpath /tmp/4r7.jar com.example.mini4x.research.SmoothnessHarness
+          python - <<'PY'
+          from pathlib import Path
+          view=Path('/tmp/4r7-presentation/ViewContract.kt.txt').read_text()
+          anim=Path('/tmp/4r7-presentation/AnimationSystem.kt').read_text()
+          assert view.count('soundPool.load(')==5
+          assert 'ConcurrentHashMap.newKeySet<Int>()' in view
+          assert 'presenter.screen==ScreenMode.WORLD && presenter.animations.isBusy()' in view
+          assert 'private val bitmaps=object:LruCache<String,Bitmap>(16*1024*1024)' in view
+          assert 'if(!scaleDetector.isInProgress)gesture.onTouchEvent(e)' in view
+          assert 'EventType.TECH_RESEARCHED,EventType.STARS_CHANGED -> Unit' in anim
+          assert 'EventType.TILES_DISCOVERED -> if(e.playerId==before.humanPlayerId)' in anim
+          assert 'fun isBusy():Boolean=current!=null||clips.isNotEmpty()' in anim
+          print('phase4r7_smoothness_static_regression=PASS')
+          PY
+
+          echo phase4r7_consolidated_jvm_gate=PASS
+          echo product_candidate_head=4aacaebd020e9ecbd130965a62168ea4ab128a23
+      - name: Preserve consolidated result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mini4x-phase4r7-consolidated-result
+          path: phase4r7-consolidated-results.txt
+          retention-days: 7
