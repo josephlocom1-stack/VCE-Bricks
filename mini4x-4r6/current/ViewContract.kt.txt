@@ -1,0 +1,32 @@
+class Mini4xViewContract {
+    private val soundPool=SoundPool.Builder().setMaxStreams(4).build()
+    private val sndClick=soundPool.load(context,R.raw.ui_click,1)
+    private val sndMove=soundPool.load(context,R.raw.move_step,1)
+    private val sndHit=soundPool.load(context,R.raw.attack_hit,1)
+    private val sndResearch=soundPool.load(context,R.raw.research,1)
+    private val sndCapture=soundPool.load(context,R.raw.capture,1)
+    private val bitmaps=object:LruCache<String,Bitmap>(16*1024*1024){override fun sizeOf(key:String,value:Bitmap)=value.byteCount}
+
+    init { savedGame=saveStore.load() }
+    private fun sfx(id:Int,vol:Float=.72f){soundPool.play(id,vol,vol,1,0,1f)}
+    private fun soundFor(cmd:Command)=when(cmd){is AttackUnit->sndHit;is BuyTechnology->sndResearch;is CaptureCity,is ExamineRuin->sndCapture;is MoveUnit->sndMove;else->sndClick}
+    override fun onDetachedFromWindow(){super.onDetachedFromWindow();soundPool.release();bitmaps.evictAll();atlas.clear()}
+
+    private val scaleDetector=ScaleGestureDetector(context,object:ScaleGestureDetector.SimpleOnScaleGestureListener(){
+        override fun onScale(s:ScaleGestureDetector):Boolean{
+            if(presenter.screen==ScreenMode.TECH){techScale=(techScale*s.scaleFactor).coerceIn(.62f,1.85f)} else camera.zoom(s.scaleFactor,s.focusX,s.focusY)
+            invalidate();return true
+        }
+    })
+    private val gesture=GestureDetector(context,object:GestureDetector.SimpleOnGestureListener(){
+        override fun onDown(e:MotionEvent)=true
+        override fun onScroll(e1:MotionEvent?,e2:MotionEvent,dx:Float,dy:Float):Boolean{
+            if(presenter.screen==ScreenMode.TECH){techPanX-=dx;techPanY-=dy;techPanX=techPanX.coerceIn(-width*.34f,width*.34f);techPanY=techPanY.coerceIn(-height*.34f,height*.34f)} else if(presenter.screen==ScreenMode.WORLD)camera.pan(-dx,-dy)
+            postInvalidateOnAnimation();return true
+        }
+        override fun onDoubleTap(e:MotionEvent):Boolean{if(presenter.screen==ScreenMode.WORLD)home();return true}
+        override fun onSingleTapUp(e:MotionEvent):Boolean{handleTap(e.x,e.y);return true}
+    })
+
+    override fun onTouchEvent(e:MotionEvent):Boolean{scaleDetector.onTouchEvent(e);if(!scaleDetector.isInProgress)gesture.onTouchEvent(e);return true}
+}
