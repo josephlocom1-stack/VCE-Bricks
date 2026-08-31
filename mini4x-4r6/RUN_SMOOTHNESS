@@ -1,0 +1,4 @@
+phase4r6_smoothness_trigger=2026-08-31
+production_head=e076042be8ed340637d16dc9c6c5f02f4c29d2e3
+candidate=four confirmed smoothness issues only
+scope=JVM/static evidence; no automatic production promotion
