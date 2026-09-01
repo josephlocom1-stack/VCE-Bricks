@@ -60,6 +60,7 @@ def alpha_bbox(layers):
 def save_layers(fid,kind,layers):
     root=RIG/f'{fid}_{kind}';root.mkdir(parents=True,exist_ok=True)
     for name,im in layers.items(): im.save(root/f'{name}.webp','WEBP',lossless=True,method=5)
+    # Ground shadow is a separate reusable layer rather than baked into joints.
     sh=blank();d=ImageDraw.Draw(sh);d.ellipse((60,166,134,184),fill=(0,0,0,78));sh=sh.filter(ImageFilter.GaussianBlur(3));sh.save(root/'shadow.webp','WEBP',lossless=True,method=5)
 
 def transform(piece, angle=0, pivot=(96,96), dx=0, dy=0):
@@ -93,7 +94,7 @@ def compose(layers, order, pose, kind):
             for k in params:setp(k,-6,(100,145),-5,0)
         elif pose=='death':
             for k in params:setp(k,60,(100,172),14,9)
-    else:
+    else: # catapult
         if pose=='move1':setp('left_wheel',16,(59,153));setp('right_wheel',16,(137,153));setp('chassis',0,(96,126),2,0)
         elif pose=='move2':setp('left_wheel',-16,(59,153));setp('right_wheel',-16,(137,153));setp('chassis',0,(96,126),-2,0)
         elif pose=='attack1':setp('throw_arm',-30,(92,112));setp('payload',-30,(92,112))
