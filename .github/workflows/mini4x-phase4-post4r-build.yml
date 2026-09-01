@@ -26,8 +26,11 @@ jobs:
           set -euo pipefail
           cd mini4x-runner
           CHECKPOINT='4aacaebd020e9ecbd130965a62168ea4ab128a23'
+          V12_PAYLOAD_TREE='c12d60177a4eaa92ebab393b84596b4f8ea7f7af'
           grep -qx "private_product_checkpoint=$CHECKPOINT" SOURCE_LOCK.txt
           grep -qx 'canonical_reconstruct_blob=122f046c82e8bfe1a999b455d759681f52217f85' SOURCE_LOCK.txt
+          grep -qx "v12_payload_tree=$V12_PAYLOAD_TREE" SOURCE_LOCK.txt
+          test "$(git rev-parse HEAD:mini4x-runner/v12-patch/payloads)" = "$V12_PAYLOAD_TREE"
           while read -r path expected extra; do
             [ -z "${path:-}" ] && continue
             [[ "$path" == \#* ]] && continue
@@ -48,6 +51,20 @@ jobs:
               final-generator/generator.02.part final-generator/generator.03.part > /tmp/phase4-generator.py
           python -m py_compile /tmp/phase4-generator.py
           python -m py_compile v12-patch/apply_v12.py v13-ai/apply_v13_ai.py v13-qa/*.py v14-ai/*.py
+          python - <<'PY'
+          from pathlib import Path
+          import base64,zlib
+          root=Path('v12-patch/payloads')
+          stems=['Mini4xView.kt','GamePresenter.kt','GameAssetAtlas.kt','MainActivity.kt','app_build.gradle.kts']
+          for stem in stems:
+              parts=sorted(root.glob(stem+'.part*'))
+              assert parts,f'missing V12 payload parts: {stem}'
+              payload=''.join(p.read_text().strip() for p in parts)
+              raw=zlib.decompress(base64.b64decode(payload))
+              assert raw,f'empty V12 payload: {stem}'
+              print(f'v12_payload_decode=PASS stem={stem} parts={len(parts)} bytes={len(raw)}')
+          print('phase4_v12_payload_integrity=PASS')
+          PY
           echo 'phase4_base_archive_integrity=PASS'
           echo 'phase4_generator_integrity=PASS'
           echo "phase4_relay_lock=PASS checkpoint=$CHECKPOINT"
