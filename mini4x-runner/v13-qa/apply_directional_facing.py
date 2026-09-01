@@ -13,6 +13,9 @@ naval=['raft','rammer','scout','bomber','juggernaut']
 all_units=core+extra_humanoids+naval
 poses=['idle','move1','move2','attack1','attack2','hit','death']
 
+# The six core classes are articulated by apply_v13_qa.py. This pass upgrades every
+# remaining standard runtime unit from its AI-derived V1.2/V1.3 idle sprite into the
+# same explicit-part production contract before directional variants are generated.
 def blank(): return Image.new('RGBA',(192,192),(0,0,0,0))
 
 def nearest_partition(im,centers,equipment_rule=None):
@@ -52,6 +55,7 @@ def naval_layers(im,kind):
       'hull_front':(137,139),'hull_mid':(98,144),'hull_back':(56,139),
       'deck':(96,120),'mast':(96,82),'sail':(116,76),'weapon':(132,104)}
     def equip(x,y,c):
+        # Keep extreme forward/projectile-like silhouettes independent from the hull.
         return (x>153 and 45<y<145) or (kind=='bomber' and y<58 and x>111)
     return nearest_partition(im,centers,equip)
 
@@ -135,6 +139,8 @@ for fid in factions:
             'domain':'water' if water else 'land'
         }
 
+# Two runtime-facing views for all 16 classes. Mirroring preserves exact joint placement
+# and proportions while the renderer selects facing from the authoritative move/attack vector.
 count=0
 for fid in factions:
     for unit in all_units:
