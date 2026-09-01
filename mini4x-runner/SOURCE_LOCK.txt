@@ -1,5 +1,6 @@
 private_product_checkpoint=4aacaebd020e9ecbd130965a62168ea4ab128a23
 canonical_reconstruct_blob=122f046c82e8bfe1a999b455d759681f52217f85
+v12_payload_tree=c12d60177a4eaa92ebab393b84596b4f8ea7f7af
 
 # path git_blob_sha
 buildsrc/noassets.00.b64 f77324bf7768acf02489bedb91421a5dcde85d46
