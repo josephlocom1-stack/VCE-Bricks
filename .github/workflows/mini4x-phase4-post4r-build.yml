@@ -1,0 +1,116 @@
+name: Mini4X Post-4R Phase 4 Product Build
+
+on:
+  push:
+    branches: [mini4x-public-qa-temp]
+    paths:
+      - 'mini4x-runner/RUN_PHASE4_BUILD'
+
+permissions:
+  contents: read
+
+jobs:
+  phase4-product-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify locked relay before Android setup
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd mini4x-runner
+          CHECKPOINT='4aacaebd020e9ecbd130965a62168ea4ab128a23'
+          grep -qx "private_product_checkpoint=$CHECKPOINT" SOURCE_LOCK.txt
+          grep -qx 'canonical_reconstruct_blob=122f046c82e8bfe1a999b455d759681f52217f85' SOURCE_LOCK.txt
+          while read -r path expected extra; do
+            [ -z "${path:-}" ] && continue
+            [[ "$path" == \#* ]] && continue
+            [[ "$path" == *=* ]] && continue
+            test -z "${extra:-}"
+            test -f "$path"
+            actual="$(git hash-object "$path")"
+            test "$actual" = "$expected" || { echo "relay hash mismatch: $path expected=$expected actual=$actual"; exit 1; }
+          done < SOURCE_LOCK.txt
+          test "$(find buildsrc -maxdepth 1 -name 'noassets*.b64' -type f | wc -l | tr -d ' ')" = 12
+          test "$(find final-generator -maxdepth 1 -name 'generator.*.part' -type f | wc -l | tr -d ' ')" = 4
+          python -m py_compile v12-patch/apply_v12.py v13-ai/apply_v13_ai.py v13-qa/*.py v14-ai/*.py
+          echo "phase4_relay_lock=PASS checkpoint=$CHECKPOINT"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Reconstruct exact post-4R product
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd mini4x-runner
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'platform-tools'
+          python -m pip install --disable-pip-version-check --quiet pillow numpy
+          bash qa/reconstruct_v14_current.sh project | tee phase4_reconstruction.txt
+          grep -q 'v14_current_reconstruction=PASS stages=16' phase4_reconstruction.txt
+          VIEW=project/app/src/main/java/com/example/mini4x/ui/Mini4xView.kt
+          ANIM=project/app/src/main/java/com/example/mini4x/presentation/AnimationSystem.kt
+          MODEL=project/app/src/main/java/com/example/mini4x/sim/Model.kt
+          MAP=project/app/src/main/java/com/example/mini4x/sim/MapGenerator.kt
+          CODEC=project/app/src/main/java/com/example/mini4x/sim/GameStateCodec.kt
+          grep -Fq 'WaterPreset.LAKES -> .87' "$MAP"
+          grep -Fq 'MAX_ENCODED_CHARS = 1_500_000' "$CODEC"
+          grep -Fq 'takeIf { it.owner == playerId }' "$MODEL"
+          grep -Fq 'fun isBusy():Boolean=current!=null||clips.isNotEmpty()' "$ANIM"
+          grep -Fq 'ConcurrentHashMap.newKeySet<Int>()' "$VIEW"
+          grep -Fq 'presenter.animations.isBusy()' "$VIEW"
+          ! grep -R -n 'fun qaScenario\|getStringExtra("qa")' project/app/src/main/java
+          grep -q 'versionName = "1.4.0"' project/app/build.gradle.kts
+          grep -q 'versionCode = 15' project/app/build.gradle.kts
+          grep -q 'compileSdk = 36' project/app/build.gradle.kts
+          grep -q 'targetSdk = 36' project/app/build.gradle.kts
+          grep -q 'minSdk = 26' project/app/build.gradle.kts
+          echo 'phase4_post4r_reconstruction=PASS' | tee phase4_reconstruction_contract.txt
+
+      - name: Build inspect and checksum product APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd mini4x-runner
+          gradle --no-daemon -p project :app:assembleDebug
+          APK=project/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" | tee phase4_signature.txt
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$APK" | tee phase4_badging.txt
+          grep -q "package: name='com.mini4x.game'" phase4_badging.txt
+          grep -q "versionCode='15'" phase4_badging.txt
+          grep -q "versionName='1.4.0'" phase4_badging.txt
+          grep -q "sdkVersion:'26'" phase4_badging.txt
+          grep -q "targetSdkVersion:'36'" phase4_badging.txt
+          sha256sum "$APK" | tee phase4_product_apk_sha256.txt
+          stat -c '%s' "$APK" | tee phase4_product_apk_size.txt
+          printf 'public_run=%s\npublic_sha=%s\nprivate_product_checkpoint=%s\n' "$GITHUB_RUN_ID" "$GITHUB_SHA" '4aacaebd020e9ecbd130965a62168ea4ab128a23' | tee phase4_run.txt
+          echo 'phase4_product_build=PASS' | tee phase4_result.txt
+          rm -rf phase4-product-evidence
+          mkdir phase4-product-evidence
+          cp "$APK" phase4-product-evidence/product-debug.apk
+          cp SOURCE_LOCK.txt phase4_reconstruction.txt phase4_reconstruction_contract.txt phase4_signature.txt phase4_badging.txt phase4_product_apk_sha256.txt phase4_product_apk_size.txt phase4_run.txt phase4_result.txt phase4-product-evidence/
+
+      - name: Preserve Phase 4 product build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mini4x-post4r-phase4-product-${{ github.run_id }}
+          retention-days: 7
+          if-no-files-found: error
+          path: mini4x-runner/phase4-product-evidence/
