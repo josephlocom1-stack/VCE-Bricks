@@ -39,7 +39,17 @@ jobs:
           done < SOURCE_LOCK.txt
           test "$(find buildsrc -maxdepth 1 -name 'noassets*.b64' -type f | wc -l | tr -d ' ')" = 12
           test "$(find final-generator -maxdepth 1 -name 'generator.*.part' -type f | wc -l | tr -d ' ')" = 4
+          cat buildsrc/noassets.00.b64 buildsrc/noassets.01.b64 buildsrc/noassets.02.b64 buildsrc/noassets.03.b64 \
+              buildsrc/noassets.04a.b64 buildsrc/noassets.04b.b64 buildsrc/noassets.05.b64 buildsrc/noassets.06.b64 \
+              buildsrc/noassets.07.b64 buildsrc/noassets.08a.b64 buildsrc/noassets.08b.b64 buildsrc/noassets.09.b64 \
+              | base64 -d > /tmp/phase4-source.zip
+          unzip -t /tmp/phase4-source.zip >/dev/null
+          cat final-generator/generator.00.part final-generator/generator.01.part \
+              final-generator/generator.02.part final-generator/generator.03.part > /tmp/phase4-generator.py
+          python -m py_compile /tmp/phase4-generator.py
           python -m py_compile v12-patch/apply_v12.py v13-ai/apply_v13_ai.py v13-qa/*.py v14-ai/*.py
+          echo 'phase4_base_archive_integrity=PASS'
+          echo 'phase4_generator_integrity=PASS'
           echo "phase4_relay_lock=PASS checkpoint=$CHECKPOINT"
 
       - uses: actions/setup-java@v5
